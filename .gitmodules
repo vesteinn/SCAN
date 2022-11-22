@@ -1,0 +1,3 @@
+[submodule "data/SCAN"]
+	path = data/SCAN
+	url = https://github.com/brendenlake/SCAN
