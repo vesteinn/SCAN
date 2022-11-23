@@ -61,8 +61,7 @@ class SCANDataset(torch.utils.data.Dataset):
         return (self.commands[idx], self.actions[idx])
 
     def encode(self, text, dictionary):
-        max_length = len(dictionary)
-        return F.one_hot(torch.tensor([dictionary[a] for a in text.strip().split()]), max_length)
+        return torch.tensor([dictionary[a] for a in text.strip().split()])
 
     def encode_command(self, command):
         return self.encode(command, self.src_dict)
