@@ -1,4 +1,5 @@
 import argparse
+import random
 
 import tqdm
 
@@ -29,6 +30,7 @@ def eval(model, dataset, num_classes, bsz=1):
             if len(tgt.shape) == 0:
                 tgt = tgt.unsqueeze(dim=0)
             output = model(src, tgt)
+            correct_seq = True
             for out_idx, out in enumerate(output):
                 if out_idx == 0:
                     # Skip BOS
@@ -36,12 +38,14 @@ def eval(model, dataset, num_classes, bsz=1):
                 tgt_idx = out_idx - 1  # ignore BOS
                 target = tgt[tgt_idx]
                 predicted = torch.nn.functional.softmax(out, dim=-1).squeeze().argmax()
-                is_correct = target == predicted
-                accuracy.append(is_correct)
+                if target != predicted:
+                    # Whole sequence needs to be correct
+                    correct_seq = False
+            accuracy.append(correct_seq)
     return accuracy  
 
 
-def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_interval=1000, bsz=1, steps=100000):
+def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_interval=1000, bsz=1, steps=100000, teacher_forcing_ratio=0.5):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     data_loader = DataLoader(train_dataset, batch_size=bsz)
     step = 0
@@ -57,7 +61,8 @@ def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_
                 src = src.unsqueeze(dim=0)
                 tgt = tgt.unsqueeze(dim=0)
 
-            output = model(src, tgt)
+            use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
+            output = model(src, tgt, teacher_forcing=use_teacher_forcing)
             loss = torch.tensor(0, device=model.device(), dtype=torch.float)
             for out_idx, out in enumerate(output):
                 if out_idx == 0:
@@ -78,7 +83,7 @@ def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_
             optimizer.step()
             step += 1
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-            if not idx % eval_interval:
+            if idx and not idx % eval_interval:
                 print(f"Step {idx} - running eval...")
                 eval_data = eval(model, eval_dataset, num_classes)
                 eval_acc = 100 * sum(eval_data) / len(eval_data)
@@ -97,20 +102,26 @@ if __name__ == "__main__":
     parser.add_argument("--train", type=str)
     parser.add_argument("--valid", type=str)
     parser.add_argument("--name", type=str, default="last_model.pt")
+    parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--bsz", type=int, default=1)
+    parser.add_argument("--steps", type=int, default=100000)
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--hidden_dim", type=int, default=100)
     parser.add_argument("--layers", type=int, default=2)
     parser.add_argument("--dropout", type=float, default=0.5)
-    parser.add_argument("--clip", type=float, default=0.5)
-    parser.add_argument("--teacher_forcing_start", type=float, default=None)
+    parser.add_argument("--clip", type=float, default=5)
+    parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
     
     args = parser.parse_args()
 
+    print("Starting SCAN training")
+    print(f"{args}")
+    print(10 * "-")
+
     tasks = "../../data/SCAN/tasks.txt"
     src_dict, tgt_dict = generate_scan_dictionary(tasks, add_bos=True, add_eos=True) 
-    train_dataset = SCANDataset(args.train, src_dict, tgt_dict)
-    valid_dataset = SCANDataset(args.valid, src_dict, tgt_dict)
+    train_dataset = SCANDataset(args.train, src_dict, tgt_dict, device=args.device)
+    valid_dataset = SCANDataset(args.valid, src_dict, tgt_dict, device=args.device)
    
     print(f"Loaded train dataset with {len(train_dataset)} entries")
     print(f"Loaded validation dataset with {len(valid_dataset)} entries")
@@ -118,7 +129,8 @@ if __name__ == "__main__":
     model = MODEL_MAP[args.model]
     # hidden_dim, num_layers, drop_out
     model = model(len(src_dict), args.hidden_dim, args.layers, args.dropout, src_dict, tgt_dict)
-    train(model, train_dataset, valid_dataset, len(tgt_dict), args.name)
+    model.to(args.device)
+    train(model, train_dataset, valid_dataset, len(tgt_dict), args.name, steps=args.steps, teacher_forcing_ratio=args.teacher_forcing_ratio)
     
 
 

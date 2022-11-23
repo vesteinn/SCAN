@@ -46,9 +46,10 @@ def generate_scan_dictionary(full_dataset, add_bos=False, add_eos=False):
 
 
 class SCANDataset(torch.utils.data.Dataset):
-    def __init__(self, data, src_dict, tgt_dict):
+    def __init__(self, data, src_dict, tgt_dict, device):
         self.src_dict = src_dict
         self.tgt_dict = tgt_dict
+        self.device = device
         self.commands = []
         self.actions = []
         self.load(data)
@@ -61,7 +62,7 @@ class SCANDataset(torch.utils.data.Dataset):
 
     def encode(self, text, dictionary):
         # TODO: add bos or eos?
-        return torch.tensor([dictionary[a] for a in text.strip().split()])
+        return torch.tensor([dictionary[a] for a in text.strip().split()]).to(self.device)
 
     def encode_command(self, command):
         return self.encode(command, self.src_dict)
