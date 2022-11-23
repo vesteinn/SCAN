@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 
 
 def parse_action_command(line):
@@ -31,8 +32,8 @@ def generate_scan_dictionary(full_dataset, add_bos=False, add_eos=False):
     for idx, command in enumerate(sorted(commands)):
         command_dict[command] = idx
     
-    action_dict["PAD"] = -1
-    command_dict["PAD"] = -1
+    action_dict["PAD"] = len(action_dict)
+    command_dict["PAD"] = len(command_dict)
 
     if add_bos:
         action_dict["BOS"] = len(action_dict)
@@ -56,11 +57,12 @@ class SCANDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.commands)
 
-    def __get__(self, idx):
+    def __getitem__(self, idx):
         return (self.commands[idx], self.actions[idx])
 
     def encode(self, text, dictionary):
-        return [dictionary[a] for a in text.strip().split()]
+        max_length = len(dictionary)
+        return F.one_hot(torch.tensor([dictionary[a] for a in text.strip().split()]), max_length)
 
     def encode_command(self, command):
         return self.encode(command, self.src_dict)
