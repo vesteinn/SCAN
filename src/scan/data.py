@@ -46,12 +46,11 @@ def generate_scan_dictionary(full_dataset, add_bos=False, add_eos=False):
 
 
 class SCANDataset(torch.utils.data.Dataset):
-    commands = []
-    actions = []
-
     def __init__(self, data, src_dict, tgt_dict):
         self.src_dict = src_dict
         self.tgt_dict = tgt_dict
+        self.commands = []
+        self.actions = []
         self.load(data)
 
     def __len__(self):
@@ -61,6 +60,7 @@ class SCANDataset(torch.utils.data.Dataset):
         return (self.commands[idx], self.actions[idx])
 
     def encode(self, text, dictionary):
+        # TODO: add bos or eos?
         return torch.tensor([dictionary[a] for a in text.strip().split()])
 
     def encode_command(self, command):

@@ -1,0 +1,125 @@
+import argparse
+
+import tqdm
+
+import torch
+from torch.utils.data import DataLoader
+
+from data import generate_scan_dictionary
+from data import SCANDataset
+from models import LSTMRNN
+ 
+
+MODEL_MAP = {
+    "lstm": LSTMRNN
+}
+
+
+def eval(model, dataset, num_classes, bsz=1):
+    accuracy = []
+    data_loader = DataLoader(dataset, batch_size=bsz)
+    with torch.no_grad():
+        for idx, data in tqdm.tqdm(enumerate(data_loader), total=len(dataset)):
+            src, tgt = data
+            if len(src.shape) > 1 and len(tgt.shape) >1 and src.shape[0] == tgt.shape[0] == 1:
+                src = src.squeeze()
+                tgt = tgt.squeeze()
+            if len(src.shape) == 0:
+                src = src.unsqueeze(dim=0)
+            if len(tgt.shape) == 0:
+                tgt = tgt.unsqueeze(dim=0)
+            output = model(src, tgt)
+            for out_idx, out in enumerate(output):
+                if out_idx == 0:
+                    # Skip BOS
+                    continue
+                tgt_idx = out_idx - 1  # ignore BOS
+                target = tgt[tgt_idx]
+                predicted = torch.nn.functional.softmax(out, dim=-1).squeeze().argmax()
+                is_correct = target == predicted
+                accuracy.append(is_correct)
+    return accuracy  
+
+
+def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_interval=1000, bsz=1, steps=100000):
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    data_loader = DataLoader(train_dataset, batch_size=bsz)
+    step = 0
+    loss_sum = 0
+    for epoch in range(10):
+        for idx, data in enumerate(data_loader):
+            optimizer.zero_grad()
+            src, tgt = data
+            if src.shape[0] == tgt.shape[0] == 1:
+                src = src.squeeze()
+                tgt = tgt.squeeze()
+            if len(src.shape) == 0:
+                src = src.unsqueeze(dim=0)
+                tgt = tgt.unsqueeze(dim=0)
+
+            output = model(src, tgt)
+            loss = torch.tensor(0, device=model.device(), dtype=torch.float)
+            for out_idx, out in enumerate(output):
+                if out_idx == 0:
+                    # Skip BOS
+                    continue
+                tgt_idx = out_idx - 1  # ignore BOS
+                target_oh  = torch.nn.functional.one_hot(tgt[tgt_idx], num_classes)
+                loss += torch.nn.functional.binary_cross_entropy(
+                    torch.nn.functional.softmax(out, dim=-1).squeeze(),
+                    target_oh.float()
+                )
+
+            loss_sum += loss
+            if not idx % 100:
+                print(f"Step {idx} - training loss: {loss_sum / 100}")
+                loss_sum = 0
+            loss.backward()
+            optimizer.step()
+            step += 1
+            torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
+            if not idx % eval_interval:
+                print(f"Step {idx} - running eval...")
+                eval_data = eval(model, eval_dataset, num_classes)
+                eval_acc = 100 * sum(eval_data) / len(eval_data)
+                print(f"Step {idx} - Eval_acc: {eval_acc:.02f} % over {len(eval_data)} data points.")
+            if step >= steps:
+                break
+        if step >= steps:
+                break
+
+    torch.save(model, name)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", type=str)
+    parser.add_argument("--train", type=str)
+    parser.add_argument("--valid", type=str)
+    parser.add_argument("--name", type=str, default="last_model.pt")
+    parser.add_argument("--bsz", type=int, default=1)
+    parser.add_argument("--lr", type=float, default=0.001)
+    parser.add_argument("--hidden_dim", type=int, default=100)
+    parser.add_argument("--layers", type=int, default=2)
+    parser.add_argument("--dropout", type=float, default=0.5)
+    parser.add_argument("--clip", type=float, default=0.5)
+    parser.add_argument("--teacher_forcing_start", type=float, default=None)
+    
+    args = parser.parse_args()
+
+    tasks = "../../data/SCAN/tasks.txt"
+    src_dict, tgt_dict = generate_scan_dictionary(tasks, add_bos=True, add_eos=True) 
+    train_dataset = SCANDataset(args.train, src_dict, tgt_dict)
+    valid_dataset = SCANDataset(args.valid, src_dict, tgt_dict)
+   
+    print(f"Loaded train dataset with {len(train_dataset)} entries")
+    print(f"Loaded validation dataset with {len(valid_dataset)} entries")
+
+    model = MODEL_MAP[args.model]
+    # hidden_dim, num_layers, drop_out
+    model = model(len(src_dict), args.hidden_dim, args.layers, args.dropout, src_dict, tgt_dict)
+    train(model, train_dataset, valid_dataset, len(tgt_dict), args.name)
+    
+
+
+

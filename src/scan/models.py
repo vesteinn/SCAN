@@ -25,15 +25,15 @@ class LSTMEncoder(nn.Module):
 
 # TODO: add attention
 class LSTMDecoder(nn.Module):
-    def __init__(self, hidden_size, output_size, num_layers, dropout, dictionary):
+    def __init__(self, hidden_size, num_layers, dropout, dictionary):
         super(LSTMDecoder, self).__init__()
         self.hidden_size = hidden_size
         self.dictionary = dictionary
 
-        self.embedding = nn.Embedding(output_size, hidden_size)
+        self.embedding = nn.Embedding(len(dictionary), hidden_size)
 
         self.lstm = nn.LSTM(hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
-        self.out = nn.Linear(hidden_size, output_size)
+        self.out = nn.Linear(hidden_size, len(dictionary))
         self.softmax = nn.LogSoftmax(dim=1)
 
     def forward(self, input, hidden, encoder_outputs):
@@ -51,7 +51,6 @@ class LSTMRNN(nn.Module):
     def __init__(self,
         input_size,
         hidden_size,
-        output_size,
         num_layers,
         dropout,
         src_dictionary,
@@ -61,9 +60,10 @@ class LSTMRNN(nn.Module):
 
         self.input_size = input_size
         self.max_length = 64
+        self.num_layers = num_layers
 
         self.encoder = LSTMEncoder(input_size, hidden_size, num_layers, dropout, src_dictionary)
-        self.decoder = LSTMDecoder(hidden_size, output_size, num_layers, dropout, tgt_dictionary)
+        self.decoder = LSTMDecoder(hidden_size, num_layers, dropout, tgt_dictionary)
 
     def device(self):
         # TODO: consider optimizing
@@ -71,16 +71,13 @@ class LSTMRNN(nn.Module):
 
     def init_hidden(self):
         # TODO: make it work for bszs
-        hidden = (
-            torch.zeros(2, 1, self.encoder.hidden_size, device=self.device()),
-            torch.zeros(2, 1, self.encoder.hidden_size, device=self.device())
-        )
+        hidden = self.num_layers * [torch.zeros(2, 1, self.encoder.hidden_size, device=self.device())]
         return hidden
 
     def forward(self, input, target, teacher_forcing=False):
-        input_length = input.size(0)
-        target_length = target.size(0)
-        
+        input_length = input.shape[0]
+        target_length = target.shape[0]
+
         # Store state for encoder steps
         encoder_outputs = torch.zeros(
             self.max_length,
@@ -118,9 +115,10 @@ class LSTMRNN(nn.Module):
                decoder_input = topi.squeeze().detach()  # detach from history as input
             
             if decoder_input.item() == self.decoder.dictionary[self.EOS]:
-                break
-        
-        return decoder_outputs
+               break
+
+        # Remove BOS
+        return torch.stack(decoder_outputs) 
 
 
 if __name__ == "__main__":
