@@ -25,3 +25,24 @@ python train.py \
     --valid ../../data/SCAN/simple_split/tasks_train_simple.txt \
     --model lstm
 ```
+
+
+## Experimental setup
+
+### Overall-best architecture
+
+The authors name a single architecture as the *overall-best* one.
+
+* 2-layer LSTM
+* 200 hidden unist per layer
+* No attention
+* Dropout applied at the 0.5 level
+
+* Trained for 100k steps using a batch size of 1
+* ADAM optimizer is used with learning rate 1e-3
+* Gradients are clipped if norm above 5.0
+* Decoding uses teacher forcing with 50% chance
+
+Accuracy in the paper is reported as above 99.5% for this model in the key experiments.
+
+
