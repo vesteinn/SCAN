@@ -16,8 +16,9 @@ class LSTMEncoder(nn.Module):
         self.lstm = nn.LSTM(hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
 
     def forward(self, input, hidden):
-        print(input.shape, hidden.shape)
+        # TODO: make batched
         embedded = self.embedding(input)
+        embedded = embedded.view(1, 1, -1)
         output, hidden = self.lstm(embedded, hidden)
         return output, hidden
 
@@ -30,21 +31,22 @@ class LSTMDecoder(nn.Module):
         self.dictionary = dictionary
 
         self.embedding = nn.Embedding(output_size, hidden_size)
+
         self.lstm = nn.LSTM(hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
         self.out = nn.Linear(hidden_size, output_size)
         self.softmax = nn.LogSoftmax(dim=1)
 
-    def forward(self, input, hidden):
-        print(input.shape, hidden.shape)
-        output, hidden = self.lstm(input, hidden)
+    def forward(self, input, hidden, encoder_outputs):
+        embedded = self.embedding(input).view(1, 1, -1)
+        output, hidden = self.lstm(embedded, hidden)
         output = self.softmax(self.out(output[0]))
         return output, hidden
 
 
 class LSTMRNN(nn.Module):
     # TODO: make dictionary class and write there
-    eos = "EOS"
-    bos = "BOS"
+    EOS = "EOS"
+    BOS = "BOS"
 
     def __init__(self,
         input_size,
@@ -68,9 +70,12 @@ class LSTMRNN(nn.Module):
         return next(self.encoder.parameters()).device
 
     def init_hidden(self):
-        # TODO: reconsider relation to BOS
         # TODO: make it work for bszs
-        return torch.zeros(1, 1, self.encoder.hidden_size, device=self.device())
+        hidden = (
+            torch.zeros(2, 1, self.encoder.hidden_size, device=self.device()),
+            torch.zeros(2, 1, self.encoder.hidden_size, device=self.device())
+        )
+        return hidden
 
     def forward(self, input, target, teacher_forcing=False):
         input_length = input.size(0)
@@ -86,24 +91,24 @@ class LSTMRNN(nn.Module):
         for idx in range(input_length):
             # Note: No need to loop with torch LSTM, but needed fro GRU?
             encoder_output, encoder_hidden = self.encoder(
-                input[idx], #.unsqueeze(dim=0).unsqueeze(dim=0).reshape(14,1,100), #,
+                input[idx],
                 encoder_hidden
             )
             encoder_outputs[idx] = encoder_output[0, 0]  # TODO: verify idxs
 
         # TODO: check that BOS is not already on data using teacher forcing
         decoder_input = torch.tensor(
-            [[self.decoder.dictionary[self.BOS]]],
-            device=self.device
+            self.decoder.dictionary[self.BOS],
+            device=self.device()
         )
         decoder_hidden = encoder_hidden
 
         decoder_outputs = []
 
-
         for idx in range(target_length):
             decoder_output, decoder_hidden = self.decoder(
-                decoder_input, decoder_hidden, encoder_outputs)
+                decoder_input, decoder_hidden, encoder_outputs
+            )
             
             decoder_outputs.append(decoder_output)
             if teacher_forcing:
@@ -120,7 +125,7 @@ class LSTMRNN(nn.Module):
 
 if __name__ == "__main__":
     tasks = "../../data/SCAN/tasks.txt"
-    src_dict, tgt_dict = generate_scan_dictionary(tasks)
+    src_dict, tgt_dict = generate_scan_dictionary(tasks, add_bos=True, add_eos=True)
     print("Dictionary loaded")
     dataset = SCANDataset(tasks, src_dict, tgt_dict)
     print("Dataset loaded")
