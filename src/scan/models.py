@@ -91,7 +91,7 @@ class LSTMRNN(nn.Module):
                 input[idx],
                 encoder_hidden
             )
-            encoder_outputs[idx] = encoder_output[0, 0]  # TODO: verify idxs
+            encoder_outputs[idx] = encoder_output.squeeze()
 
         # TODO: check that BOS is not already on data using teacher forcing
         decoder_input = torch.tensor(

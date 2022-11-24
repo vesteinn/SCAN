@@ -1,6 +1,6 @@
 # SCAN
 
-This is a re-implementation of the SCAN paper by Lake and Baroni https://arxiv.org/abs/1711.00350
+This is a re-implementation of the SCAN paper by Lake and Baroni http://proceedings.mlr.press/v80/lake18a/lake18a.pdf
 
 ## Setup
 
@@ -19,13 +19,13 @@ Then make sure you have pytorch and tqdm installed into your environment. The pr
 To run a full training of the best overall model from the paper simply run the following (the default parameters should correspond to those used in the paper).
 
 ```bash
-cd src/SCAN/
-python train.py \
-    --train ../../data/SCAN/simple_split/tasks_train_simple.txt \
-    --valid ../../data/SCAN/simple_split/tasks_train_simple.txt \
+python src/scan/train.py \
+    --train data/SCAN/simple_split/tasks_train_simple.txt \
+    --valid data/SCAN/simple_split/tasks_train_simple.txt \
     --model lstm
 ```
 
+Scripts for running all experiments using top-performing architectures and the over-best one are under `./scripts`.
 
 ## Experimental setup
 
@@ -43,6 +43,12 @@ The authors name a single architecture as the *overall-best* one.
 * Gradients are clipped if norm above 5.0
 * Decoding uses teacher forcing with 50% chance
 
-Accuracy in the paper is reported as above 99.5% for this model in the key experiments.
+Accuracy in the paper is reported as at least 95% for this model in the key experiments. Top-performing models reach above 99.5%.
 
+## Experiment 1
 
+The reported top-performer score is 99.8 %. The model only differs from the *overall-best* one in that there is no drop out (and possibly no gradient clipping, though this is unclear in the paper).
+
+## Experiment 2
+
+## Experiment 3

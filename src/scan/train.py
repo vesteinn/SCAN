@@ -1,5 +1,6 @@
 import argparse
 import random
+import os
 
 import tqdm
 
@@ -22,7 +23,8 @@ def eval(model, dataset, num_classes, bsz=1):
     with torch.no_grad():
         for idx, data in tqdm.tqdm(enumerate(data_loader), total=len(dataset)):
             src, tgt = data
-            if len(src.shape) > 1 and len(tgt.shape) >1 and src.shape[0] == tgt.shape[0] == 1:
+            if len(src.shape) > 1 and len(tgt.shape) > 1 \
+                    and src.shape[0] == tgt.shape[0] == 1:
                 src = src.squeeze()
                 tgt = tgt.squeeze()
             if len(src.shape) == 0:
@@ -133,7 +135,8 @@ if __name__ == "__main__":
     print(f"{args}")
     print(10 * "-")
 
-    tasks = "../../data/SCAN/tasks.txt"
+    cur_path = os.path.dirname(os.path.realpath(__file__))
+    tasks = f"{cur_path}/../../data/SCAN/tasks.txt"
     src_dict, tgt_dict = generate_scan_dictionary(tasks, add_bos=True, add_eos=True) 
     train_dataset = SCANDataset(args.train, src_dict, tgt_dict, device=args.device)
     valid_dataset = SCANDataset(args.valid, src_dict, tgt_dict, device=args.device)
