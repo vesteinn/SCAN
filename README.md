@@ -43,11 +43,11 @@ The authors name a single architecture as the *overall-best* one.
 * Gradients are clipped if norm above 5.0
 * Decoding uses teacher forcing with 50% chance
 
-Accuracy in the paper is reported as at least 95% for this model in the key experiments. Top-performing models reach above 99.5%.
+Training (!) accuracy in the paper is reported as at least 99.5% for this model in the key experiments. Top-performing models reach above 95% training accuracy.
 
 ## Experiment 1
 
-The reported top-performer score is 99.8 %. The model only differs from the *overall-best* one in that there is no drop out (and possibly no gradient clipping, though this is unclear in the paper).
+The reported top-performer score is 99.8 % over the test-set, and that of the overall best model is reported as 99.7% on the test-set (averaged over 5 runs). The model only differs from the *overall-best* one in that there is no drop out (and possibly no gradient clipping, though this is unclear in the paper).
 
 ## Experiment 2
 
