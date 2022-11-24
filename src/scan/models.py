@@ -71,7 +71,7 @@ class LSTMRNN(nn.Module):
 
     def init_hidden(self):
         # TODO: make it work for bszs
-        hidden = self.num_layers * [torch.zeros(2, 1, self.encoder.hidden_size, device=self.device())]
+        hidden = self.num_layers * [torch.zeros(2, 1, self.encoder.hidden_size, device=self.device(), requires_grad=True)]
         return hidden
 
     def forward(self, input, target, teacher_forcing=False):
@@ -112,7 +112,7 @@ class LSTMRNN(nn.Module):
                 decoder_input = target[idx]  # Teacher forcing
             else:
                _topv, topi = decoder_output.topk(1)
-               decoder_input = topi.squeeze().detach()  # detach from history as input
+               decoder_input = topi.squeeze().clone().detach()  # detach from history as input
             
             if decoder_input.item() == self.decoder.dictionary[self.EOS]:
                break
