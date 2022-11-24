@@ -61,7 +61,8 @@ class LSTMRNN(nn.Module):
         self.input_size = input_size
         self.max_length = 64
         self.num_layers = num_layers
-
+        
+        # TODO: is this the same dropout as referenced in the paper?
         self.encoder = LSTMEncoder(input_size, hidden_size, num_layers, dropout, src_dictionary)
         self.decoder = LSTMDecoder(hidden_size, num_layers, dropout, tgt_dictionary)
 

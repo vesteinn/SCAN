@@ -1,6 +1,6 @@
 # SCAN
 
-This is a re-implementation of the SCAN paper by Lake and Baroni http://proceedings.mlr.press/v80/lake18a/lake18a.pdf
+This is a re-implementation of the paper _Generalization without Systematicity: On the Compositional Skills of Sequence-to-Sequence Recurrent Networks_ (SCAN) by Lake and Baroni http://proceedings.mlr.press/v80/lake18a/lake18a.pdf
 
 ## Setup
 
@@ -45,10 +45,34 @@ The authors name a single architecture as the *overall-best* one.
 
 Training (!) accuracy in the paper is reported as at least 99.5% for this model in the key experiments. Top-performing models reach above 95% training accuracy.
 
+---
+
+Reproduced experiments from the paper are described below.
+
 ## Experiment 1
 
+### 80 / 20 split
 The reported top-performer score is 99.8 % over the test-set, and that of the overall best model is reported as 99.7% on the test-set (averaged over 5 runs). The model only differs from the *overall-best* one in that there is no drop out (and possibly no gradient clipping, though this is unclear in the paper).
+
+### Varying number of distinct samples
+Besides the 80 / 20 split, other experiments using 1, 2, 4, 8, 16, 32 and 64 % of the training data were made.
+
+> (From paper) With 1% of the commands shown during training (about 210 examples), the network performs poorly at about 5% correct. With 2% coverage, performance improves to about 54% correct on the test set. By 4% coverage, performance is about 93% correct. 
 
 ## Experiment 2
 
+### Split by length
+In this experiment sequences of length <=22 are used to train and those above for testing.
+
+The best result was achieved using
+* Single layer GRU
+  - With attention
+  - 50-dimensional hidden layer
+  - Dropout 0.5
+
 ## Experiment 3
+
+
+
+## Experiment 4
+

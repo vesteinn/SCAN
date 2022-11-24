@@ -17,7 +17,7 @@ MODEL_MAP = {
 }
 
 
-def eval(model, dataset, num_classes, bsz=1):
+def eval(model, dataset, bsz=1):
     accuracy = []
     data_loader = DataLoader(dataset, batch_size=bsz)
     with torch.no_grad():
@@ -94,7 +94,7 @@ def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_
             
             if idx and not idx % eval_interval:
                 print(f"Step {step} - running eval...")
-                eval_data = eval(model, eval_dataset, num_classes)
+                eval_data = eval(model, eval_dataset)
                 eval_acc = 100 * sum(eval_data) / len(eval_data)
                 accs.append(eval_acc)
                 max_acc = max(accs)
@@ -105,7 +105,7 @@ def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_
                 break
     torch.save(model, name)
     print(f"Finished - running eval...")
-    eval_data = eval(model, eval_dataset, num_classes)
+    eval_data = eval(model, eval_dataset)
     eval_acc = 100 * sum(eval_data) / len(eval_data)
     accs.append(eval_acc)
     max_acc = max(accs)
