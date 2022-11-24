@@ -8,7 +8,7 @@ def parse_action_command(line):
     return command, action
 
 
-def generate_scan_dictionary(full_dataset, add_bos=False, add_eos=False):
+def generate_scan_dictionary(full_dataset, add_bos=True, add_eos=True):
     #
     # Example (split on separator):
     # IN: walk opposite right thrice after run opposite right
@@ -60,15 +60,20 @@ class SCANDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         return (self.commands[idx], self.actions[idx])
 
-    def encode(self, text, dictionary):
-        # TODO: add bos or eos?
-        return torch.tensor([dictionary[a] for a in text.strip().split()]).to(self.device)
+    def encode(self, text, dictionary, add_bos=False, add_eos=False):
+        # TODO: read from variable
+        if add_eos:
+            text += " EOS"
+        if add_bos:
+            txt += "BOS "
+        encoding = [dictionary[a] for a in text.strip().split()]
+        return torch.tensor(encoding).to(self.device)
 
     def encode_command(self, command):
-        return self.encode(command, self.src_dict)
+        return self.encode(command, self.src_dict, add_eos=True)
 
     def encode_action(self, action):
-        return self.encode(action, self.tgt_dict)
+        return self.encode(action, self.tgt_dict, add_bos=True)
 
     def load(self, data):
         with open(data) as infile:
@@ -87,6 +92,6 @@ if __name__ == "__main__":
     assert len(tgt_dict) > 0
     print(f"Dictionaries lodaded, {len(src_dict)} in src_dict, {len(tgt_dict)} in tgt_dict.")
 
-    dataset = SCANDataset(tasks, src_dict, tgt_dict)
+    dataset = SCANDataset(tasks, src_dict, tgt_dict, "cpu")
     assert len(dataset) > 2000
     print(f"Dataset loaded with {len(dataset)} records.")
