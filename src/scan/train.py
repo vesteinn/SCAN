@@ -39,7 +39,8 @@ def eval(model, dataset, bsz=1):
                     continue
                 tgt_idx = out_idx - 1  # ignore BOS
                 target = tgt[tgt_idx]
-                predicted = torch.nn.functional.softmax(out, dim=-1).squeeze().argmax()
+                # output is logsoftmax
+                predicted = torch.exp(out).argmax() #torch.nn.functional.softmax(out, dim=-1).squeeze().argmax()
                 if target != predicted:
                     # Whole sequence needs to be correct
                     correct_seq = False
@@ -121,7 +122,7 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--bsz", type=int, default=1)
     parser.add_argument("--steps", type=int, default=100000)
-    parser.add_argument("--eval_interval", type=int, default=5000)
+    parser.add_argument("--eval_interval", type=int, default=1000)
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--hidden_dim", type=int, default=100)
     parser.add_argument("--layers", type=int, default=2)

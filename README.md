@@ -21,7 +21,7 @@ To run a full training of the best overall model from the paper simply run the f
 ```bash
 python src/scan/train.py \
     --train data/SCAN/simple_split/tasks_train_simple.txt \
-    --valid data/SCAN/simple_split/tasks_train_simple.txt \
+    --valid data/SCAN/simple_split/tasks_test_simple.txt \
     --model lstm
 ```
 

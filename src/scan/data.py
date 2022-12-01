@@ -65,7 +65,7 @@ class SCANDataset(torch.utils.data.Dataset):
         if add_eos:
             text += " EOS"
         if add_bos:
-            txt += "BOS "
+            text = "BOS " + text
         encoding = [dictionary[a] for a in text.strip().split()]
         return torch.tensor(encoding).to(self.device)
 
