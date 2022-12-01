@@ -29,19 +29,26 @@ class Encoder(nn.Module):
         # TODO: make batched
         embedded = self.embedding(input).view(1, 1, -1)
         output, hidden = self.hidden_layers(embedded, hidden)
-        return output, hidden, None
+        return output, hidden
 
 
 class Decoder(nn.Module):
     def _get_hidden_type(self, *args):
         raise NotImplementedError
 
-    def __init__(self, hidden_size, num_layers, dropout, dictionary):
+    def __init__(self, hidden_size, num_layers, dropout, dictionary, use_attention=False, max_length=64):
         super(Decoder, self).__init__()
         self.hidden_size = hidden_size
         self.dictionary = dictionary
-
+        self.max_length = max_length
+        self.use_attention = use_attention
         self.embedding = nn.Embedding(len(dictionary), hidden_size)
+
+        if use_attention:
+            self.attn = nn.Linear(self.hidden_size*2, self.max_length)
+            self.attn_combine = nn.Linear(self.hidden_size*2, self.hidden_size)
+            self.dropout = nn.Dropout(dropout)
+
         layer_type = self._get_hidden_type()
         self.hidden_layers = layer_type(hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
         self.out = nn.Linear(hidden_size, len(dictionary))
@@ -49,9 +56,20 @@ class Decoder(nn.Module):
 
     def forward(self, input, hidden, encoder_outputs):
         embedded = self.embedding(input).view(1, 1, -1)
-        output, hidden = self.hidden_layers(embedded, hidden)
-        output = self.softmax(self.out(output[0]))
-        return output, hidden, None
+        attn_weights = None
+        if self.use_attention:
+            # Should this be here? Or always/never?
+            embedded = self.dropout(embedded)
+            attn_weights = F.softmax(self.attn(torch.cat([embedded[0],hidden[0]],1)), dim = 1)
+            attn_applied = torch.bmm(attn_weights.unsqueeze(0), encoder_outputs.unsqueeze(0))
+            output = torch.cat([embedded[0],attn_applied[0]],1)
+            output = self.attn_combine(output).unsqueeze(0)
+            output, hidden = self.hidden_layers(output, hidden)
+            output = F.log_softmax(self.out(output[0]),dim=1)
+        else:
+            output, hidden = self.hidden_layers(embedded, hidden)
+            output = self.softmax(self.out(output[0]))
+        return output, hidden, attn_weights
 
 
 class RNN(nn.Module):
@@ -72,7 +90,8 @@ class RNN(nn.Module):
         dropout,
         src_dictionary,
         tgt_dictionary,
-        max_length=64):
+        max_length=64,
+        use_attention=False):
         super(RNN, self).__init__()
 
         self.input_size = input_size
@@ -81,7 +100,7 @@ class RNN(nn.Module):
         
         # TODO: is this the same dropout as referenced in the paper?
         self.encoder = self._get_encoder()(input_size, hidden_size, num_layers, dropout, src_dictionary)
-        self.decoder = self._get_decoder()(hidden_size, num_layers, dropout, tgt_dictionary)
+        self.decoder = self._get_decoder()(hidden_size, num_layers, dropout, tgt_dictionary, use_attention=use_attention)
 
     def device(self):
         # TODO: consider optimizing
@@ -108,7 +127,7 @@ class RNN(nn.Module):
         for idx in range(input_length):
             
             # Note: No need to loop with torch LSTM, but needed fro GRU?
-            encoder_output, encoder_hidden, _ = self.encoder(
+            encoder_output, encoder_hidden = self.encoder(
                 input[idx],
                 encoder_hidden
             )
@@ -180,38 +199,6 @@ class GRUDecoder(Decoder):
         return nn.GRU
 
 
-class AttnGRUDecoder(nn.Module):
-    def __init__(self,hidden_size, num_layers,dropout,dictionary):
-        super(AttnGRUDecoder,self).__init__()
-        self.hidden_size = hidden_size
-        self.dictionary = dictionary
-        self.dropout = dropout
-        self.max_length = 64
-
-        self.embedding = nn.Embedding(len(dictionary), hidden_size)
-        self.attn = nn.Linear(self.hidden_size*2, self.max_length)
-        self.attn_combine = nn.Linear(self.hidden_size*2, self.hidden_size)
-        self.dropout = nn.Dropout(self.dropout)
-
-        self.gru = nn.GRU(hidden_size,hidden_size,num_layers,dropout=dropout)
-        self.out = nn.Linear(hidden_size, len(dictionary))
-        #self.softmax = nn.LogSoftmax(dim=1)
-
-    def forward(self, input, hidden, encoder_outputs):
-        embedded = self.embedding(input).view(1, 1, -1)
-        embedded = self.dropout(embedded)
-        
-        attn_weights = F.softmax(self.attn(torch.cat([embedded[0],hidden[0]],1)), dim = 1)
-        attn_applied = torch.bmm(attn_weights.unsqueeze(0), encoder_outputs.unsqueeze(0))
-        
-        output = torch.cat([embedded[0],attn_applied[0]],1)
-        output = self.attn_combine(output).unsqueeze(0)
-        
-        output, hidden = self.gru(output, hidden)
-        output = F.log_softmax(self.out(output[0]),dim=1)
-        return output, hidden,attn_weights
-
-
 class GRURNN(RNN):
     def _get_encoder(self):
         return GRUEncoder
@@ -257,3 +244,17 @@ if __name__ == "__main__":
     print("GRU model forward ran without teacher forcing")
     outputs = gru_model.forward(input, target, teacher_forcing=True)
     print("GRU model forward ran with teacher forcing")
+    gru_model = GRURNN(
+        len(src_dict),
+        50,
+        1,
+        0.5,
+        src_dict,
+        tgt_dict,
+        use_attention=True
+    )
+    print("GRU Model with attention initialized")
+    outputs = gru_model.forward(input, target, teacher_forcing=False)
+    print("GRU model w.att. forward ran without teacher forcing")
+    outputs = gru_model.forward(input, target, teacher_forcing=True)
+    print("GRU model w.att.forward ran with teacher forcing")
