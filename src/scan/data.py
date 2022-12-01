@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Nov 30 23:57:04 2022
+
+@author: some
+"""
+
 import torch
 import torch.nn.functional as F
 
@@ -63,9 +70,9 @@ class SCANDataset(torch.utils.data.Dataset):
     def encode(self, text, dictionary, add_bos=False, add_eos=False):
         # TODO: read from variable
         if add_eos:
-            text += " EOS"
+            text += " EOS "
         if add_bos:
-            txt += "BOS "
+            text += " BOS "
         encoding = [dictionary[a] for a in text.strip().split()]
         return torch.tensor(encoding).to(self.device)
 
@@ -86,7 +93,7 @@ class SCANDataset(torch.utils.data.Dataset):
 if __name__ == "__main__":
     # Simple test for ScanDataset, assumes submodule with data
     # has been loaded.
-    tasks = "../../data/SCAN/tasks.txt"
+    tasks = "./data/tasks.txt"
     src_dict, tgt_dict = generate_scan_dictionary(tasks)
     assert len(src_dict) > 0
     assert len(tgt_dict) > 0

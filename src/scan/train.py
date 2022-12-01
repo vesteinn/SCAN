@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Nov 30 23:57:55 2022
+
+@author: some
+"""
+
 import argparse
 import random
 import os
@@ -9,11 +16,12 @@ from torch.utils.data import DataLoader
 
 from data import generate_scan_dictionary
 from data import SCANDataset
-from models import LSTMRNN
+from models import LSTMRNN,GRURNN
  
 
 MODEL_MAP = {
-    "lstm": LSTMRNN
+    "lstm": LSTMRNN,
+    "rnn": GRURNN
 }
 
 
@@ -114,17 +122,17 @@ def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str)
+    parser.add_argument("--model", type=str, default = 'rnn')
     parser.add_argument("--train", type=str)
     parser.add_argument("--valid", type=str)
     parser.add_argument("--name", type=str, default="last_model.pt")
-    parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--bsz", type=int, default=1)
-    parser.add_argument("--steps", type=int, default=100000)
+    parser.add_argument("--steps", type=int, default=15000)
     parser.add_argument("--eval_interval", type=int, default=5000)
     parser.add_argument("--lr", type=float, default=0.001)
-    parser.add_argument("--hidden_dim", type=int, default=100)
-    parser.add_argument("--layers", type=int, default=2)
+    parser.add_argument("--hidden_dim", type=int, default=50)
+    parser.add_argument("--layers", type=int, default=1)
     parser.add_argument("--dropout", type=float, default=0.5)
     parser.add_argument("--clip", type=float, default=5)
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
@@ -136,20 +144,21 @@ if __name__ == "__main__":
     print(10 * "-")
 
     cur_path = os.path.dirname(os.path.realpath(__file__))
-    tasks = f"{cur_path}/../../data/SCAN/tasks.txt"
+    tasks = f"{cur_path}/data/tasks.txt"
+    trains = f"{cur_path}/data/tasks_train_length.txt"
+    valids = f"{cur_path}/data/tasks_train_length.txt"
     src_dict, tgt_dict = generate_scan_dictionary(tasks, add_bos=True, add_eos=True) 
-    train_dataset = SCANDataset(args.train, src_dict, tgt_dict, device=args.device)
-    valid_dataset = SCANDataset(args.valid, src_dict, tgt_dict, device=args.device)
+    train_dataset = SCANDataset(trains, src_dict, tgt_dict, device=args.device)
+    valid_dataset = SCANDataset(valids, src_dict, tgt_dict, device=args.device)
    
     print(f"Loaded train dataset with {len(train_dataset)} entries")
     print(f"Loaded validation dataset with {len(valid_dataset)} entries")
 
-    model = MODEL_MAP[args.model]
+    model = MODEL_MAP['rnn']
     # hidden_dim, num_layers, drop_out
     model = model(len(src_dict), args.hidden_dim, args.layers, args.dropout, src_dict, tgt_dict)
     model.to(args.device)
     train(model, train_dataset, valid_dataset, len(tgt_dict), args.name, steps=args.steps, teacher_forcing_ratio=args.teacher_forcing_ratio, eval_interval=args.eval_interval)
     
-
 
 
