@@ -8,8 +8,8 @@ from data import generate_scan_dictionary, SCANDataset
 
 #
 # TODO: The dropout used here is not same as in paper!
-#       DOES NOT WORK WITH SINGLE LAYER
-#       We need a drop out layer after also!
+#       LSTM/GRU do not support dropout with a single layer.
+#       We need a drop out layer after also !
 # 
 
 class Encoder(nn.Module):
@@ -89,6 +89,7 @@ class RNN(nn.Module):
 
     def init_hidden(self):
         # TODO: make it work for bszs
+        # TODO: why is it like this?
         if self.num_layers > 1:
             return self.num_layers * [torch.zeros(self.num_layers, 1, self.encoder.hidden_size, device=self.device(), requires_grad=True)]
         return torch.zeros(self.num_layers, 1, self.encoder.hidden_size, device=self.device(), requires_grad=True)
