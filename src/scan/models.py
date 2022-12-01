@@ -263,12 +263,22 @@ class GRURNN(nn.Module):
 
 
 if __name__ == "__main__":
-    tasks = "./data/tasks.txt"
+    tasks = "../../data/SCAN/tasks.txt"
     src_dict, tgt_dict = generate_scan_dictionary(tasks, add_bos=True, add_eos=True)
     print("Dictionary loaded")
     dataset = SCANDataset(tasks, src_dict, tgt_dict)
     print("Dataset loaded")
-    model = GRURNN(
+    model = LSTMRNN(
+        len(src_dict),
+        100,
+        10,
+        2,
+        0.5,
+        src_dict,
+        tgt_dict
+    )
+    print("LSTM model initialized")
+    gru_model = GRURNN(
         len(src_dict),
         50,
         1,
@@ -276,11 +286,14 @@ if __name__ == "__main__":
         src_dict,
         tgt_dict
     )
-    print("Model initialized")
+    print("GRU Model initialized")
     input, target = dataset[0]
     print(f"Input shape {input.shape}. Target shape {target.shape}.")
     outputs = model.forward(input, target, teacher_forcing=False)
-    print("Model forward ran without teacher forcing")
-
+    print("LSTM model forward ran without teacher forcing")
     outputs = model.forward(input, target, teacher_forcing=True)
-    print("Model forward ran with teacher forcing")
+    print("LSTM model forward ran with teacher forcing")
+    outputs = gru_model.forward(input, target, teacher_forcing=False)
+    print("GRU model forward ran without teacher forcing")
+    outputs = gru_model.forward(input, target, teacher_forcing=True)
+    print("GRU model forward ran with teacher forcing")
