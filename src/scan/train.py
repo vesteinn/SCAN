@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Nov 30 23:57:55 2022
-
-@author: some
-"""
-
 import argparse
 import random
 import os
@@ -19,7 +12,7 @@ from data import SCANDataset
 from models import LSTMRNN,GRURNN
  
 
-MODEL_MAP = {
+ODEL_MAP = {
     "lstm": LSTMRNN,
     "rnn": GRURNN
 }
