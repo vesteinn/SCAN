@@ -14,7 +14,7 @@ from models import GRURNN
 from models import LSTMRNN
  
 
-ODEL_MAP = {
+MODEL_MAP = {
     "lstm": LSTMRNN,
     "gru": GRURNN
 }
@@ -140,17 +140,16 @@ if __name__ == "__main__":
     print(10 * "-")
 
     cur_path = os.path.dirname(os.path.realpath(__file__))
-    tasks = f"{cur_path}/data/tasks.txt"
-    trains = f"{cur_path}/data/tasks_train_length.txt"
-    valids = f"{cur_path}/data/tasks_train_length.txt"
+    data_path = f"{cur_path}/../../data/SCAN"
+    tasks = f"{data_path}/tasks.txt"
     src_dict, tgt_dict = generate_scan_dictionary(tasks, add_bos=True, add_eos=True) 
-    train_dataset = SCANDataset(trains, src_dict, tgt_dict, device=args.device)
-    valid_dataset = SCANDataset(valids, src_dict, tgt_dict, device=args.device)
+    train_dataset = SCANDataset(args.train, src_dict, tgt_dict, device=args.device)
+    valid_dataset = SCANDataset(args.valid, src_dict, tgt_dict, device=args.device)
    
     print(f"Loaded train dataset with {len(train_dataset)} entries")
     print(f"Loaded validation dataset with {len(valid_dataset)} entries")
 
-    model = MODEL_MAP['rnn']
+    model = MODEL_MAP[args.model]
     # hidden_dim, num_layers, drop_out
     model = model(len(src_dict), args.hidden_dim, args.layers, args.dropout, src_dict, tgt_dict)
     model.to(args.device)
