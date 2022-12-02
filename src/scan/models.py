@@ -32,12 +32,87 @@ class Encoder(nn.Module):
         return output, hidden
 
 
+class Attention(nn.Module):
+    """
+    Implementation of attention following the description in the
+    supplement to the SCAN paper, following Dima's attention paper.
+    """
+    def __init__(self, hidden_size):
+        super(Attention, self).__init__()
+        # For alignment between decoder hidden state
+        # and encoder hidden state.
+        # Twice hidden_size to encompass both W_{\alpha}
+        # and U_{\alpha}.
+        self.w = nn.Linear(hidden_size*2, hidden_size)
+        # Learned weight of alignments
+        self.v = nn.Parameter(torch.tensor(hidden_size, dtype=float))
+
+    def forward(self, hidden, encoder_outputs):
+        # hidden: hidden_size
+        # encoder_outputs: hidden_size * max_length
+        num_outputs = encoder_outputs.shape[0]
+        # repeat so we have concatenation for every
+        # one of the encoder hidden states!
+        hidden_for_cat = hidden.squeeze().repeat(num_outputs, 1)
+        cat = torch.cat((hidden_for_cat, encoder_outputs), dim=-1)
+        # alignment / energy
+        # the energy used in the first class, and in JLTAAT is
+        # the concat variant
+        alignment = self.v * self.w(cat).tanh()
+        weights = F.softmax(alignment, dim=-1) # right dim?
+        context = torch.bmm(weights.unsqueeze(-1), encoder_outputs.unsqueeze(-1).mT)
+        # Return the weighted sum
+        # what is this..
+        #return torch.matmul(weights.T, encoder_outputs).sum(dim=0).unsqueeze(dim=0)
+        return context.sum(dim=-1)
+
+
 class Decoder(nn.Module):
-    def _get_hidden_type(self, *args):
+    def _get_hidden_type(self):
         raise NotImplementedError
 
     def __init__(self, hidden_size, num_layers, dropout, dictionary, use_attention=False, max_length=64):
         super(Decoder, self).__init__()
+        self.hidden_size = hidden_size
+        self.dictionary = dictionary
+        self.max_length = max_length
+        self.use_attention = use_attention
+        self.embedding = nn.Embedding(len(dictionary), hidden_size)
+
+        if use_attention:
+            self.attention = Attention(hidden_size=hidden_size)
+
+        layer_type = self._get_hidden_type()
+        self.hidden_layers = layer_type(hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
+        self.out = nn.Linear(hidden_size, len(dictionary))
+        # Should we use logsoftmax?
+        self.softmax = nn.LogSoftmax(dim=1)
+
+    def forward(self, input, hidden, encoder_outputs):
+        embedded = self.embedding(input).view(1, 1, -1)
+        attn_weights = None
+        if self.use_attention:
+            # Following JLTAAT we would supply the embeddings
+            # According to the suplement, only the hidden state
+            # is fed to the attention layer
+            context = self.attention(hidden, encoder_outputs)
+            ctxt_hidden = torch.cat((context[0], hidden.squeeze().unsqueeze(dim=0)[0]), dim=0)
+            breakpoint()
+            output, hidden = self.hidden_layers(embedded, ctxt_hidden.unsqueeze(dim=1))
+            # "Last the hidden state is concatenated with c_i and mapped
+            # to a softmax"
+        else:
+            output, hidden = self.hidden_layers(embedded, hidden)
+        output = self.softmax(self.out(output[0]))
+        return output, hidden, attn_weights
+
+
+class DecoderWithTaoAttention(nn.Module):
+    def _get_hidden_type(self):
+        raise NotImplementedError
+
+    def __init__(self, hidden_size, num_layers, dropout, dictionary, use_attention=False, max_length=64):
+        super(DecoderWithTaoAttention, self).__init__()
         self.hidden_size = hidden_size
         self.dictionary = dictionary
         self.max_length = max_length
