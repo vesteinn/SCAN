@@ -24,11 +24,13 @@ class Encoder(nn.Module):
         self.embedding = nn.Embedding(input_size, hidden_size)
         layer_type = self._get_hidden_type()
         self.hidden_layers = layer_type(hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
+        self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, input, hidden):
         # TODO: make batched
         embedded = self.embedding(input).view(1, 1, -1)
         output, hidden = self.hidden_layers(embedded, hidden)
+        output = self.dropout(hidden)
         return output, hidden
 
 
@@ -86,6 +88,7 @@ class Decoder(nn.Module):
             self.w = nn.Linear(2 * hidden_size, hidden_size)
 
         self.hidden_layers = layer_type(hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
+        self.dropout = nn.Dropout(p=dropout)
         self.out = nn.Linear(hidden_size, len(dictionary))
         # Should we use logsoftmax?
         self.softmax = nn.LogSoftmax(dim=1)
@@ -116,6 +119,7 @@ class Decoder(nn.Module):
             # could also be applied afterwards.
             # We project the context to the hidden size.
             output, hidden = self.hidden_layers(embedded, self.w(ctxt_hidden))
+            self.dropout(output)
             # "Last the hidden state is concatenated with c_i and mapped
             # to a softmax", so we reuse the context vecor here but
             # with the updaten hidden state.
@@ -123,6 +127,7 @@ class Decoder(nn.Module):
             output = self.softmax(self.out(new_ctxt_hidden))
         else:
             output, hidden = self.hidden_layers(embedded, hidden)
+            self.dropout(output)
             output = self.softmax(self.out(output[0]))
         return output, hidden, attn_weights
 
