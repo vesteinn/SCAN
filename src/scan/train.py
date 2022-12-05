@@ -9,11 +9,14 @@ from torch.utils.data import DataLoader
 
 from data import generate_scan_dictionary
 from data import SCANDataset
+
+from models import GRURNN
 from models import LSTMRNN
  
 
 MODEL_MAP = {
-    "lstm": LSTMRNN
+    "lstm": LSTMRNN,
+    "gru": GRURNN
 }
 
 
@@ -55,6 +58,7 @@ def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_
     loss_sum = 0
     max_acc = 0
     accs = []
+    accuracy = []
     for epoch in range(10):
         for idx, data in enumerate(data_loader):
             optimizer.zero_grad()
@@ -69,21 +73,35 @@ def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_
             use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
             output = model(src, tgt, teacher_forcing=use_teacher_forcing)
             loss = torch.tensor(0.0, device=model.device())
+            correct_seq = True
             for out_idx, out in enumerate(output):
                 if out_idx == 0:
                     # Skip BOS
                     continue
                 tgt_idx = out_idx - 1  # ignore BOS
+                target = tgt[tgt_idx]
+                predicted = torch.exp(out).argmax() #torch.nn.functional.softmax(out, dim=-1).squeeze().argmax()
+                if target != predicted:
+                    # Whole sequence needs to be correct
+                    correct_seq = False
+                    
                 target_oh  = torch.nn.functional.one_hot(tgt[tgt_idx], num_classes)
                 loss += torch.nn.functional.binary_cross_entropy(
                     torch.nn.functional.softmax(out, dim=-1).squeeze(),
                     target_oh.float()
                 )
+            accuracy.append(correct_seq)
 
             loss_sum += loss
-            if not idx % 100:
-                print(f"Step {step} - training loss: {loss_sum / 100}")
+            
+            
+
+            
+            
+            if not idx % 1000:
+                print(f"Step {step} - training loss: {loss_sum / 1000} - training accuracy: {sum(accuracy)/10:.02f} %")
                 loss_sum = 0
+                accuracy = []
 
             step += 1
             if loss.requires_grad:
@@ -92,16 +110,15 @@ def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_
             
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
             optimizer.step()
-            
-            if idx and not idx % eval_interval:
-                print(f"Step {step} - running eval...")
-                eval_data = eval(model, eval_dataset)
-                eval_acc = 100 * sum(eval_data) / len(eval_data)
-                accs.append(eval_acc)
-                max_acc = max(accs)
-                print(f"Step {step} - Eval_acc: {eval_acc:.02f} % over {len(eval_data)} data points (max {max_acc}).")
-            if step >= steps:
-                break
+
+        print(f"Step {step} - running eval...")
+        eval_data = eval(model, eval_dataset)
+        eval_acc = 100 * sum(eval_data) / len(eval_data)
+        accs.append(eval_acc)
+        max_acc = max(accs)
+        print(f"Step {step} - Eval_acc: {eval_acc:.02f} % over {len(eval_data)} data points (max {max_acc}).")
+        # if step >= steps:
+        #     break
         if step >= steps:
                 break
     torch.save(model, name)
@@ -115,20 +132,21 @@ def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str)
+    parser.add_argument("--model", type=str, default = 'lstm')
     parser.add_argument("--train", type=str)
     parser.add_argument("--valid", type=str)
     parser.add_argument("--name", type=str, default="last_model.pt")
-    parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--bsz", type=int, default=1)
-    parser.add_argument("--steps", type=int, default=100000)
+    parser.add_argument("--steps", type=int, default=200000)
     parser.add_argument("--eval_interval", type=int, default=1000)
-    parser.add_argument("--lr", type=float, default=0.001)
+    parser.add_argument("--lr", type=float, default=0.01)
     parser.add_argument("--hidden_dim", type=int, default=100)
     parser.add_argument("--layers", type=int, default=2)
     parser.add_argument("--dropout", type=float, default=0.5)
     parser.add_argument("--clip", type=float, default=5)
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
+    parser.add_argument("--use_attention", type=str, default=False)
     
     args = parser.parse_args()
 
@@ -137,7 +155,8 @@ if __name__ == "__main__":
     print(10 * "-")
 
     cur_path = os.path.dirname(os.path.realpath(__file__))
-    tasks = f"{cur_path}/../../data/SCAN/tasks.txt"
+    data_path = f"{cur_path}/../../data/SCAN"
+    tasks = f"{data_path}/tasks.txt"
     src_dict, tgt_dict = generate_scan_dictionary(tasks, add_bos=True, add_eos=True) 
     train_dataset = SCANDataset(args.train, src_dict, tgt_dict, device=args.device)
     valid_dataset = SCANDataset(args.valid, src_dict, tgt_dict, device=args.device)
@@ -147,10 +166,9 @@ if __name__ == "__main__":
 
     model = MODEL_MAP[args.model]
     # hidden_dim, num_layers, drop_out
-    model = model(len(src_dict), args.hidden_dim, args.layers, args.dropout, src_dict, tgt_dict)
+    model = model(len(src_dict), args.hidden_dim, args.layers, args.dropout, src_dict, tgt_dict, args.use_attention)
     model.to(args.device)
     train(model, train_dataset, valid_dataset, len(tgt_dict), args.name, steps=args.steps, teacher_forcing_ratio=args.teacher_forcing_ratio, eval_interval=args.eval_interval)
     
-
 
 
