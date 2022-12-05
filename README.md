@@ -70,6 +70,16 @@ The best result was achieved using
   - 50-dimensional hidden layer
   - Dropout 0.5
 
+```bash
+python src/scan/train.py \
+    --train data/SCAN/length_split/tasks_train_length.txt \
+    --valid data/SCAN/length_split/tasks_test_length.txt \
+    --model gru
+    --hidden_dim 50
+    --layers 1 
+    --use_attention True
+```
+
 ## Experiment 3
 
 ### Split by Jump and Turn Left
