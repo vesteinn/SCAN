@@ -72,7 +72,42 @@ The best result was achieved using
 
 ## Experiment 3
 
+### Split by Jump and Turn Left
+In this experiment sequences are divided into two parts according to primitive commands (“jump” and “turn left”).
 
+The best result for TURN LEFT was achieved using
+* Single layer GRU
+  - With attention
+  - 100-dimensional hidden layer
+  - Dropout 0.1
+
+```bash
+python src/scan/train.py \
+    --train data/SCAN/add_prim_split/tasks_train_addprim_turn_left.txt \
+    --valid data/SCAN/add_prim_split/tasks_test_addprim_turn_left.txt \
+    --model gru
+    --dropout 0.1
+    --hidden_dim 100 
+    --layers 1 
+    --use_attention True
+```
+
+The best result for JUMP was achieved using
+* Single layer LSTM
+  - With attention
+  - 100-dimensional hidden layer
+  - Dropout 0.1
+
+```bash
+python src/scan/train.py \
+    --train data/SCAN/add_prim_split/tasks_test_addprim_jump.txt \
+    --valid data/SCAN/add_prim_split/tasks_test_addprim_jump.txt \
+    --model lstm  
+    --hidden_dim 100 
+    --layers 1 
+    --dropout 0.1 
+    --use_attention True
+```
 
 ## Experiment 4
 
