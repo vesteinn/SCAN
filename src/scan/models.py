@@ -30,7 +30,7 @@ class Encoder(nn.Module):
         # TODO: make batched
         embedded = self.embedding(input).view(1, 1, -1)
         output, hidden = self.hidden_layers(embedded, hidden)
-        output = self.dropout(hidden)
+        output = self.dropout(output)
         return output, hidden
 
 
