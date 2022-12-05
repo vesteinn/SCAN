@@ -59,6 +59,7 @@ def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_
     max_acc = 0
     accs = []
     accuracy = []
+    best_eval_acc = 0
     for epoch in range(10):
         for idx, data in enumerate(data_loader):
             optimizer.zero_grad()
@@ -116,12 +117,16 @@ def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_
         eval_acc = 100 * sum(eval_data) / len(eval_data)
         accs.append(eval_acc)
         max_acc = max(accs)
-        print(f"Step {step} - Eval_acc: {eval_acc:.02f} % over {len(eval_data)} data points (max {max_acc}).")
+        print(f"Epoch {epoch} Step {step} - Eval_acc: {eval_acc:.02f} % over {len(eval_data)} data points (max {max_acc}).")
+        if eval_acc >= best_eval_acc:
+            best_eval_acc = eval_acc
+            print("Found new best model on dev set!")
+            torch.save(model.state_dict(), 'model_best.std')
         # if step >= steps:
         #     break
         if step >= steps:
                 break
-    torch.save(model, name)
+    model.load_state_dict(torch.load('model_best.std'))
     print(f"Finished - running eval...")
     eval_data = eval(model, eval_dataset)
     eval_acc = 100 * sum(eval_data) / len(eval_data)
