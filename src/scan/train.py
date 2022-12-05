@@ -9,11 +9,14 @@ from torch.utils.data import DataLoader
 
 from data import generate_scan_dictionary
 from data import SCANDataset
+
+from models import GRURNN
 from models import LSTMRNN
  
 
 MODEL_MAP = {
-    "lstm": LSTMRNN
+    "lstm": LSTMRNN,
+    "gru": GRURNN
 }
 
 
@@ -115,11 +118,11 @@ def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str)
+    parser.add_argument("--model", type=str, default = 'lstm')
     parser.add_argument("--train", type=str)
     parser.add_argument("--valid", type=str)
     parser.add_argument("--name", type=str, default="last_model.pt")
-    parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--bsz", type=int, default=1)
     parser.add_argument("--steps", type=int, default=100000)
     parser.add_argument("--eval_interval", type=int, default=1000)
@@ -137,7 +140,8 @@ if __name__ == "__main__":
     print(10 * "-")
 
     cur_path = os.path.dirname(os.path.realpath(__file__))
-    tasks = f"{cur_path}/../../data/SCAN/tasks.txt"
+    data_path = f"{cur_path}/../../data/SCAN"
+    tasks = f"{data_path}/tasks.txt"
     src_dict, tgt_dict = generate_scan_dictionary(tasks, add_bos=True, add_eos=True) 
     train_dataset = SCANDataset(args.train, src_dict, tgt_dict, device=args.device)
     valid_dataset = SCANDataset(args.valid, src_dict, tgt_dict, device=args.device)
@@ -151,6 +155,5 @@ if __name__ == "__main__":
     model.to(args.device)
     train(model, train_dataset, valid_dataset, len(tgt_dict), args.name, steps=args.steps, teacher_forcing_ratio=args.teacher_forcing_ratio, eval_interval=args.eval_interval)
     
-
 
 
