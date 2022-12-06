@@ -82,11 +82,15 @@ class Decoder(nn.Module):
         if use_attention:
             self.attention = Attention(hidden_size=hidden_size)
             layer_type = self._get_hidden_type()
-            self.hidden_layers = layer_type(2*hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
+            self.hidden_layers = layer_type(hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
+            self.w1 = nn.Linear(2*hidden_size , hidden_size)
+            self.w2 = nn.Linear(2*hidden_size , hidden_size)
+            self.out = nn.Linear(hidden_size, len(dictionary))
         else:
             layer_type = self._get_hidden_type()
             self.hidden_layers = layer_type(hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)           
-        self.out = nn.Linear(hidden_size, len(dictionary))
+            self.out = nn.Linear(hidden_size, len(dictionary))  
+        self.softmax = nn.LogSoftmax(dim=1)
 
 
     def forward(self, input, hidden, encoder_outputs):
@@ -100,12 +104,14 @@ class Decoder(nn.Module):
             context = self.attention(hidden, encoder_outputs) #[1,1,100]
             ctxt_em = torch.cat((context, embedded), dim=-1)#[1,1,200]
             # breakpoint()
-            output, hidden = self.hidden_layers(ctxt_em, hidden) #[1,1,100],[1,1,100]
+            output, hidden = self.hidden_layers(self.w1(ctxt_em), hidden) #[1,1,100],[1,1,100]
             # "Last the hidden state is concatenated with c_i and mapped
             # to a softmax"
+            hidden = self.dropout(hidden)
+            output = self.out(self.w2(torch.cat((hidden, output),dim=-1)))[0]
         else:
             output, hidden = self.hidden_layers(embedded, hidden)
-        output = self.out(output[0])
+            output = self.out(output)[0]
         return output, hidden, attn_weights
 
 
@@ -198,7 +204,7 @@ class RNN(nn.Module):
             torch.zeros(self.num_layers, batch_size, self.encoder.hidden_size, device=self.device(), requires_grad=True))
         # return torch.zeros(self.num_layers, 1, self.encoder.hidden_size, device=self.device(), requires_grad=True)
 
-    def forward(self, input, target, teacher_forcing=False):
+    def forward(self, input, target, teacher_forcing=False, oracle=False):
         input_length = input.shape[0]
         target_length = target.shape[0]
 
@@ -241,8 +247,10 @@ class RNN(nn.Module):
                _topv, topi = decoder_output.topk(1)
                decoder_input = topi.squeeze().clone().detach()  # detach from history as input
             
+            
             if decoder_input.item() == self.decoder.dictionary[self.EOS]:
-               break
+                if oracle == False:
+                   break
 
         # Remove BOS
         return torch.stack(decoder_outputs) 
