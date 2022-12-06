@@ -1,7 +1,7 @@
 import argparse
 import random
 import os
-
+import numpy as np
 import tqdm
 
 import torch
@@ -12,6 +12,7 @@ from data import SCANDataset
 
 from models import GRURNN
 from models import LSTMRNN
+import pdb
  
 
 MODEL_MAP = {
@@ -23,6 +24,7 @@ MODEL_MAP = {
 def eval(model, dataset, bsz=1):
     accuracy = []
     data_loader = DataLoader(dataset, batch_size=bsz)
+    error = []
     with torch.no_grad():
         for idx, data in tqdm.tqdm(enumerate(data_loader), total=len(dataset)):
             src, tgt = data
@@ -47,20 +49,37 @@ def eval(model, dataset, bsz=1):
                 if target != predicted:
                     # Whole sequence needs to be correct
                     correct_seq = False
+            if correct_seq == False:
+                error.append((src,tgt))
             accuracy.append(correct_seq)
-    return accuracy  
+    return accuracy,error
 
 
-def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_interval=1000, bsz=1, steps=100000, teacher_forcing_ratio=0.5):
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    data_loader = DataLoader(train_dataset, batch_size=bsz)
-    step = 0
-    loss_sum = 0
+def train(model_init, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_interval=1000, bsz=1, steps=100000, teacher_forcing_ratio=0.5):
+
+    # step = 0
     max_acc = 0
+    
+    #to append evaluation for each run
     accs = []
-    accuracy = []
     best_eval_acc = 0
     for epoch in range(10):
+        # if epoch >0:
+            # model_new = MODEL_MAP[args.model]
+            # model = model_new(len(src_dict), args.hidden_dim, args.layers, args.dropout, src_dict, tgt_dict, args.use_attention)
+            # model.to(args.device)
+            
+        model = model_init
+        # print(model)
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        # pdb.set_trace()
+        random_list = np.random.choice([j for j in range(len(train_dataset))],steps)
+        data_ = [train_dataset[i] for i in random_list]
+        data_loader = DataLoader(data_, batch_size=bsz)
+        #"step" is only for print every 1000 step
+        acc_step = []
+        loss_sum = 0
+        loss_step = 0
         for idx, data in enumerate(data_loader):
             optimizer.zero_grad()
             src, tgt = data
@@ -91,48 +110,52 @@ def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_
                     torch.nn.functional.softmax(out, dim=-1).squeeze(),
                     target_oh.float()
                 )
-            accuracy.append(correct_seq)
+            acc_step.append(correct_seq)
 
             loss_sum += loss
-            
-            
-
-            
+            loss_step += loss
             
             if not idx % 1000:
-                print(f"Step {step} - training loss: {loss_sum / 1000} - training accuracy: {sum(accuracy)/10:.02f} %")
-                loss_sum = 0
-                accuracy = []
+                print(f"Epoch {epoch+1} Step {idx} - training loss: {loss_step / 1000} - training accuracy: {sum(acc_step)/10:.02f} %")
+                loss_step = 0
+                acc_step = []
 
-            step += 1
+            # step += 1
             if loss.requires_grad:
                 # Why is this needed...?
                 loss.backward()
             
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
             optimizer.step()
-
-        print(f"Step {step} - running eval...")
-        eval_data = eval(model, eval_dataset)
+            
+        #print valid result
+        print("Running eval...")
+        eval_data,_ = eval(model, eval_dataset)
         eval_acc = 100 * sum(eval_data) / len(eval_data)
         accs.append(eval_acc)
         max_acc = max(accs)
-        print(f"Epoch {epoch} Step {step} - Eval_acc: {eval_acc:.02f} % over {len(eval_data)} data points (max {max_acc}).")
+        
+        #print train result
+        train_data,_ = eval(model, train_dataset)
+        train_acc = 100 * sum(train_data) / len(train_data)
+        
+        print(f"Epoch {epoch+1} - Train_acc: {train_acc:.02f} - Eval_acc: {eval_acc:.02f} % over {len(eval_data)} data points (max {max_acc}).")
         if eval_acc >= best_eval_acc:
             best_eval_acc = eval_acc
             print("Found new best model on dev set!")
-            torch.save(model.state_dict(), 'model_best.std')
+            # torch.save(model.state_dict(), 'model_best.std')
         # if step >= steps:
         #     break
-        if step >= steps:
-                break
-    model.load_state_dict(torch.load('model_best.std'))
+
+    # model.load_state_dict(torch.load('model_best.std'))
     print(f"Finished - running eval...")
-    eval_data = eval(model, eval_dataset)
+    eval_data,error = eval(model, eval_dataset)
     eval_acc = 100 * sum(eval_data) / len(eval_data)
-    accs.append(eval_acc)
     max_acc = max(accs)
-    print(f"Step {step} - Eval_acc: {eval_acc:.02f} % over {len(eval_data)} data points (max {max_acc}).")
+    #average over 10 runs
+    avg_eval_acc = np.mean(accs)
+    print(f"Final - AVG_eval_acc: {avg_eval_acc:.02f}% -Last_eval_acc: {eval_acc:.02f} % over {len(eval_data)} data points (max {max_acc}).")
+    return error
 
 
 if __name__ == "__main__":
@@ -143,9 +166,9 @@ if __name__ == "__main__":
     parser.add_argument("--name", type=str, default="last_model.pt")
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--bsz", type=int, default=1)
-    parser.add_argument("--steps", type=int, default=200000)
+    parser.add_argument("--steps", type=int, default=100000)
     parser.add_argument("--eval_interval", type=int, default=1000)
-    parser.add_argument("--lr", type=float, default=0.01)
+    parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--hidden_dim", type=int, default=100)
     parser.add_argument("--layers", type=int, default=2)
     parser.add_argument("--dropout", type=float, default=0.5)
@@ -171,9 +194,11 @@ if __name__ == "__main__":
 
     model = MODEL_MAP[args.model]
     # hidden_dim, num_layers, drop_out
-    model = model(len(src_dict), args.hidden_dim, args.layers, args.dropout, src_dict, tgt_dict, args.use_attention)
-    model.to(args.device)
-    train(model, train_dataset, valid_dataset, len(tgt_dict), args.name, steps=args.steps, teacher_forcing_ratio=args.teacher_forcing_ratio, eval_interval=args.eval_interval)
+    model_init = model(len(src_dict), args.hidden_dim, args.layers, args.dropout, src_dict, tgt_dict, args.use_attention)
+    model_init.to(args.device)
+    # pdb.set_trace()
+    error = train(model_init = model_init, train_dataset= train_dataset, eval_dataset = valid_dataset, num_classes=len(tgt_dict), name = args.name, steps=args.steps, teacher_forcing_ratio=args.teacher_forcing_ratio, eval_interval=args.eval_interval)
+    
     
 
 
