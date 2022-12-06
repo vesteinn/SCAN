@@ -55,9 +55,7 @@ def eval(model, dataset, bsz=1):
     return accuracy,error
 
 
-def train(model, train_dataset, eval_dataset,
-          MODEL_MAP, model_name,hidden_dim, layers, dropout, src_dict, tgt_dict, use_attention,device,num_classes, name, 
-          lr=0.001, eval_interval=1000, bsz=1, steps=100000, teacher_forcing_ratio=0.5):
+def train(train_dataset, eval_dataset,MODEL_MAP, model_name,hidden_dim, layers, dropout, src_dict, tgt_dict, use_attention,device,num_classes, name, lr=0.001, eval_interval=1000, bsz=1, steps=100000, teacher_forcing_ratio=0.5):
 
     # step = 0
     max_acc = 0
@@ -65,26 +63,28 @@ def train(model, train_dataset, eval_dataset,
     #to append evaluation for each run
     accs = []
     best_eval_acc = 0
-    for epoch in range(10):
-        if epoch >0:
-            model_new = MODEL_MAP[model_name]
-            model = model_new(len(src_dict), hidden_dim, layers, dropout, src_dict, tgt_dict, use_attention)
-            model.to(args.device)
-            
+    for epoch in range(5):
+        model_new = MODEL_MAP[model_name]
+        model = model_new(len(src_dict), hidden_dim, layers, dropout, src_dict, tgt_dict, use_attention)
+        model.to(args.device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        
         # model = model_init
         # print(model)
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
         # pdb.set_trace()
-        random_list = np.random.choice([j for j in range(len(train_dataset))],steps)
-        data_ = [train_dataset[i] for i in random_list]
-        data_loader = DataLoader(data_, batch_size=bsz)
+        # random_list = np.random.choice([j for j in range(len(train_dataset))],steps)
+        # data_ = [train_dataset[i] for i in random_list]
+        # data_loader = DataLoader(data_, batch_size=bsz)
+        
         #"step" is only for print every 1000 step
         acc_step = []
         loss_sum = 0
         loss_step = 0
-        for idx, data in enumerate(data_loader):
+        for i in range(steps):
+        # for idx, data in enumerate(data_loader):
+            index = np.random_choice(len(train_dataset))
             optimizer.zero_grad()
-            src, tgt = data
+            src, tgt = train_dataset[index]
             if src.shape[0] == tgt.shape[0] == 1:
                 src = src.squeeze()
                 tgt = tgt.squeeze()
@@ -194,16 +194,12 @@ if __name__ == "__main__":
     print(f"Loaded train dataset with {len(train_dataset)} entries")
     print(f"Loaded validation dataset with {len(valid_dataset)} entries")
 
-    model = MODEL_MAP[args.model]
-    # hidden_dim, num_layers, drop_out
-    model = model(len(src_dict), args.hidden_dim, args.layers, args.dropout, src_dict, tgt_dict, args.use_attention)
-    model.to(args.device)
+    # model = MODEL_MAP[args.model]
+    # # hidden_dim, num_layers, drop_out
+    # model = model(len(src_dict), args.hidden_dim, args.layers, args.dropout, src_dict, tgt_dict, args.use_attention)
+    # model.to(args.device)
     # pdb.set_trace()
-    error = train(model = model, train_dataset= train_dataset, eval_dataset = valid_dataset, 
-                  MODEL_MAP = MODEL_MAP,model_name = args.model, hidden_dim=args.hidden_dim, 
-                  layers=args.layers, dropout=args.dropout, src_dict, tgt_dict, use_attention=args.use_attention, 
-                  device = args.device,num_classes=len(tgt_dict), name = args.name, steps=args.steps, 
-                  teacher_forcing_ratio=args.teacher_forcing_ratio, eval_interval=args.eval_interval)
+    error = train(train_dataset= train_dataset, eval_dataset = valid_dataset, MODEL_MAP = MODEL_MAP,model_name = args.model, hidden_dim=args.hidden_dim, layers=args.layers, dropout=args.dropout, src_dict, tgt_dict, use_attention=args.use_attention, device = args.device,num_classes=len(tgt_dict), name = args.name, steps=args.steps, teacher_forcing_ratio=args.teacher_forcing_ratio, eval_interval=args.eval_interval)
     
     
 
