@@ -10,8 +10,8 @@ from torch.utils.data import DataLoader
 from data import generate_scan_dictionary
 from data import SCANDataset
 
-from models import GRURNN
-from models import LSTMRNN
+from models1 import GRURNN
+from models1 import LSTMRNN
 import pdb
  
 
@@ -55,7 +55,9 @@ def eval(model, dataset, bsz=1):
     return accuracy,error
 
 
-def train(model_init, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_interval=1000, bsz=1, steps=100000, teacher_forcing_ratio=0.5):
+def train(model, train_dataset, eval_dataset,
+          MODEL_MAP, model_name,hidden_dim, layers, dropout, src_dict, tgt_dict, use_attention,device,num_classes, name, 
+          lr=0.001, eval_interval=1000, bsz=1, steps=100000, teacher_forcing_ratio=0.5):
 
     # step = 0
     max_acc = 0
@@ -64,12 +66,12 @@ def train(model_init, train_dataset, eval_dataset, num_classes, name, lr=0.001, 
     accs = []
     best_eval_acc = 0
     for epoch in range(10):
-        # if epoch >0:
-            # model_new = MODEL_MAP[args.model]
-            # model = model_new(len(src_dict), args.hidden_dim, args.layers, args.dropout, src_dict, tgt_dict, args.use_attention)
-            # model.to(args.device)
+        if epoch >0:
+            model_new = MODEL_MAP[model_name]
+            model = model_new(len(src_dict), hidden_dim, layers, dropout, src_dict, tgt_dict, use_attention)
+            model.to(args.device)
             
-        model = model_init
+        # model = model_init
         # print(model)
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
         # pdb.set_trace()
@@ -194,10 +196,14 @@ if __name__ == "__main__":
 
     model = MODEL_MAP[args.model]
     # hidden_dim, num_layers, drop_out
-    model_init = model(len(src_dict), args.hidden_dim, args.layers, args.dropout, src_dict, tgt_dict, args.use_attention)
-    model_init.to(args.device)
+    model = model(len(src_dict), args.hidden_dim, args.layers, args.dropout, src_dict, tgt_dict, args.use_attention)
+    model.to(args.device)
     # pdb.set_trace()
-    error = train(model_init = model_init, train_dataset= train_dataset, eval_dataset = valid_dataset, num_classes=len(tgt_dict), name = args.name, steps=args.steps, teacher_forcing_ratio=args.teacher_forcing_ratio, eval_interval=args.eval_interval)
+    error = train(model = model, train_dataset= train_dataset, eval_dataset = valid_dataset, 
+                  MODEL_MAP = MODEL_MAP,model_name = args.model, hidden_dim=args.hidden_dim, 
+                  layers=args.layers, dropout=args.dropout, src_dict, tgt_dict, use_attention=args.use_attention, 
+                  device = args.device,num_classes=len(tgt_dict), name = args.name, steps=args.steps, 
+                  teacher_forcing_ratio=args.teacher_forcing_ratio, eval_interval=args.eval_interval)
     
     
 
