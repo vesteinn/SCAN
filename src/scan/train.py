@@ -78,7 +78,7 @@ def train(train_dataset, eval_dataset,MODEL_MAP, model_name,hidden_dim, layers, 
     #to append evaluation for each run
     accs = []
     best_eval_acc = 0
-    for epoch in range(1):
+    for epoch in range(5):
         model_new = MODEL_MAP[model_name]
         model = model_new(len(src_dict), hidden_dim, layers, dropout, src_dict, tgt_dict, use_attention)
         model.to(args.device)
@@ -193,7 +193,7 @@ if __name__ == "__main__":
     parser.add_argument("--name", type=str, default="last_model.pt")
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--bsz", type=int, default=1)
-    parser.add_argument("--steps", type=int, default=10000)
+    parser.add_argument("--steps", type=int, default=100000)
     parser.add_argument("--eval_interval", type=int, default=1000)
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--hidden_dim", type=int, default=100)
