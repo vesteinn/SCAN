@@ -104,15 +104,20 @@ class Decoder(nn.Module):
             # Following Bahdanau 2015 we would supply the embeddings
             # According to the suplement, only the hidden state
             # is fed to the attention layer
+            # pdb.set_trace()
             context = self.attention(hidden, encoder_outputs) #[1,1,100]
             ctxt_em = torch.cat((context, embedded), dim=-1)#[1,1,200]
             # breakpoint()
             output, hidden = self.hidden_layers(self.w1(ctxt_em), hidden) #[1,1,100],[1,1,100]
             # "Last the hidden state is concatenated with c_i and mapped
             # to a softmax"
-            hidden = self.dropout(hidden)
+            if len(hidden)>1:
+                output = self.out(self.w2(self.dropout(torch.cat((hidden[-1], output),dim=-1))))[0]
+            else:
+                output = self.out(self.w2(self.dropout(torch.cat((hidden, output),dim=-1))))[0]
+            # hidden = self.dropout(hidden)
             # pdb.set_trace()
-            output = self.out(self.w2(torch.cat((hidden, output),dim=-1)))[0]
+            
         else:
             output, hidden = self.hidden_layers(embedded, hidden)
             output = self.out(output)[0]
@@ -181,7 +186,7 @@ class RNN(nn.Module):
         dropout,
         src_dictionary,
         tgt_dictionary,
-        max_length=64,
+        max_length=48,
         use_attention=False
         ):
         super(RNN, self).__init__()
@@ -248,6 +253,7 @@ class RNN(nn.Module):
         # breakpoint()
         # print(train_or_test,oracle,max_length)
         for idx in range(max_length):
+            # pdb.set_trace()
             decoder_output, decoder_hidden, _ = self.decoder(
                 decoder_input, decoder_hidden, encoder_outputs
             )
