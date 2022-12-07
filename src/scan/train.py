@@ -131,6 +131,7 @@ if __name__ == "__main__":
     parser.add_argument("--layers", type=int, default=2)
     parser.add_argument("--dropout", type=float, default=0.5)
     parser.add_argument("--clip", type=float, default=5)
+    parser.add_argument("--use_attention", type=bool, default=False)
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
     
     args = parser.parse_args()
@@ -151,7 +152,7 @@ if __name__ == "__main__":
 
     model = MODEL_MAP[args.model]
     # hidden_dim, num_layers, drop_out
-    model = model(len(src_dict), args.hidden_dim, args.layers, args.dropout, src_dict, tgt_dict)
+    model = model(len(src_dict), args.hidden_dim, args.layers, args.dropout, src_dict, tgt_dict, use_attention=args.use_attention)
     model.to(args.device)
     train(model, train_dataset, valid_dataset, len(tgt_dict), args.name, steps=args.steps, teacher_forcing_ratio=args.teacher_forcing_ratio, eval_interval=args.eval_interval)
     

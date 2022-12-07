@@ -84,16 +84,18 @@ class Decoder(nn.Module):
         layer_type = self._get_hidden_type()
         if use_attention:
             self.attention = Attention(hidden_size=hidden_size)
-            # To project the concatenated vecotr to the hidden_size
-            self.w = nn.Linear(2 * hidden_size, hidden_size)
+            # To project the concatenated vector to the hidden_size
+            self.w1 = nn.Linear(2 * hidden_size, hidden_size)
+            # We can use w1 in both cases when using the same concat?
+            self.w2 = nn.Linear(2 * hidden_size, hidden_size)
 
         self.hidden_layers = layer_type(hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
         self.dropout = nn.Dropout(p=dropout)
         self.out = nn.Linear(hidden_size, len(dictionary))
         # Should we use logsoftmax?
-        self.softmax = nn.LogSoftmax(dim=1)
+        self.softmax = nn.LogSoftmax(dim=-1)
 
-    def forward(self, input, hidden, encoder_hiddens):
+    def forward(self, input, hidden, encoder_hiddens, concat_hidden=True):
         # hidden: [num_layers, bsz, hidden_size]
         # encoder_hiddens: [max_length, hidden_size]
         # input: int
@@ -113,17 +115,21 @@ class Decoder(nn.Module):
                 attn_weights
             ).sum(dim=-1).view(1, 1, -1)
             # ctxt_hidden: [1, 1, hidden_size * 2]
-            ctxt_hidden = torch.cat((context, hidden), dim=-1)
+            if concat_hidden:
+                ctxt_cat = torch.cat((context, hidden), dim=-1)
+            else:
+                ctxt_cat = torch.cat((context, embedded), dim=-1)
             # The supplement is quite explicit that the context vector
             # is passed as input to the decoder RNN, but the attention
             # could also be applied afterwards.
             # We project the context to the hidden size.
-            output, hidden = self.hidden_layers(embedded, self.w(ctxt_hidden))
+            # output, hidden = self.hidden_layers(embedded, self.w(ctxt_hidden))
+            output, hidden = self.hidden_layers(self.w1(ctxt_cat), hidden)
             self.dropout(output)
             # "Last the hidden state is concatenated with c_i and mapped
             # to a softmax", so we reuse the context vecor here but
             # with the updaten hidden state.
-            new_ctxt_hidden = self.w(torch.cat((context, hidden), dim=-1))
+            new_ctxt_hidden = self.w2(torch.cat((context, hidden), dim=-1))
             output = self.softmax(self.out(new_ctxt_hidden))
         else:
             output, hidden = self.hidden_layers(embedded, hidden)
@@ -236,10 +242,9 @@ class RNN(nn.Module):
             else:
                 # GRU
                 enc_hidden = encoder_hidden
-           
-            # Is the last layer the 0th or the -1st
-            # TODO: CHECK
-            encoder_hiddens[idx] = enc_hidden[0] #.squeeze()
+
+            # -1 for the last layer!
+            encoder_hiddens[idx] = enc_hidden[-1]
 
         # TODO: check that BOS is not already on data using teacher forcing
         decoder_input = torch.tensor(
