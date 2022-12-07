@@ -58,7 +58,7 @@ def eval(model, dataset, oracle,bsz=1):
                         # Whole sequence needs to be correct
                         correct_seq = False
             if correct_seq == True:
-                action_list[len(tgt)-2] += 1 #remove EOS BOS
+                action_list[len(tgt)-1] += 1 #remove EOS BOS
                 # print(len(tgt))
 
             accuracy.append(correct_seq)
@@ -170,11 +170,12 @@ def train(train_dataset, eval_dataset,MODEL_MAP, model_name,hidden_dim, layers, 
         if eval_acc >= best_eval_acc:
             best_eval_acc = eval_acc
             print("Found new best model on dev set!")
-            # torch.save(model.state_dict(), 'model_best.std')
+            # torch.save(model.state_dict(), 'model_best1.std')
+            torch.save(model, 'model_best1.std')
         # if step >= steps:
         #     break
 
-    # model.load_state_dict(torch.load('model_best.std'))
+    model = torch.load('model_best1.std')
     print(f"Finished - running eval...")
     eval_data,action_list= eval(model, eval_dataset ,oracle)
     eval_acc = 100 * sum(eval_data) / len(eval_data)
