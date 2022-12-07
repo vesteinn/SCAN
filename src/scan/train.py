@@ -58,7 +58,7 @@ def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_
     loss_sum = 0
     max_acc = 0
     accs = []
-    for epoch in range(10):
+    for epoch in range(1 + steps // len(data_loader)):
         for idx, data in enumerate(data_loader):
             optimizer.zero_grad()
             src, tgt = data
@@ -131,7 +131,8 @@ if __name__ == "__main__":
     parser.add_argument("--layers", type=int, default=2)
     parser.add_argument("--dropout", type=float, default=0.5)
     parser.add_argument("--clip", type=float, default=5)
-    parser.add_argument("--use_attention", type=bool, default=False)
+    parser.add_argument("--use_attention", action='store_true', default=False)
+    parser.add_argument("--use_concat_hidden", action='store_true', default=False)
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
     
     args = parser.parse_args()
@@ -152,7 +153,16 @@ if __name__ == "__main__":
 
     model = MODEL_MAP[args.model]
     # hidden_dim, num_layers, drop_out
-    model = model(len(src_dict), args.hidden_dim, args.layers, args.dropout, src_dict, tgt_dict, use_attention=args.use_attention)
+    model = model(
+        len(src_dict),
+        args.hidden_dim,
+        args.layers,
+        args.dropout,
+        src_dict,
+        tgt_dict,
+        use_attention=args.use_attention,
+        use_concat_hidden=args.use_concat_hidden
+    )
     model.to(args.device)
     train(model, train_dataset, valid_dataset, len(tgt_dict), args.name, steps=args.steps, teacher_forcing_ratio=args.teacher_forcing_ratio, eval_interval=args.eval_interval)
     

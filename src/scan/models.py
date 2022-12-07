@@ -10,6 +10,7 @@ from data import generate_scan_dictionary, SCANDataset
 # TODO: The dropout used here is not same as in paper!
 #       LSTM/GRU do not support dropout with a single layer.
 #       We need a drop out layer after also !
+# From paper: Dropout is "applied to recurrent layers and word embeddings"
 # 
 
 class Encoder(nn.Module):
@@ -23,12 +24,14 @@ class Encoder(nn.Module):
 
         self.embedding = nn.Embedding(input_size, hidden_size)
         layer_type = self._get_hidden_type()
-        self.hidden_layers = layer_type(hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
+        self.hidden_layers = layer_type(hidden_size, hidden_size, num_layers=num_layers) #, dropout=dropout)
+        # Since the last layer does not get dropout applied using the above
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, input, hidden):
         # TODO: make batched
         embedded = self.embedding(input).view(1, 1, -1)
+        self.dropout(embedded)
         output, hidden = self.hidden_layers(embedded, hidden)
         output = self.dropout(output)
         return output, hidden
@@ -73,12 +76,14 @@ class Decoder(nn.Module):
     def _get_hidden_type(self):
         raise NotImplementedError
 
-    def __init__(self, hidden_size, num_layers, dropout, dictionary, use_attention=False, max_length=64):
+    def __init__(self, hidden_size, num_layers, dropout, dictionary, use_attention=False, use_concat_hidden=True, max_length=64):
         super(Decoder, self).__init__()
         self.hidden_size = hidden_size
         self.dictionary = dictionary
         self.max_length = max_length
         self.use_attention = use_attention
+        self.use_concat_hidden = use_concat_hidden
+
         self.embedding = nn.Embedding(len(dictionary), hidden_size)
         
         layer_type = self._get_hidden_type()
@@ -87,20 +92,24 @@ class Decoder(nn.Module):
             # To project the concatenated vector to the hidden_size
             self.w1 = nn.Linear(2 * hidden_size, hidden_size)
             # We can use w1 in both cases when using the same concat?
-            self.w2 = nn.Linear(2 * hidden_size, hidden_size)
+            # Experiments show this gave better results, but using w2
+            # is more in line with the paper.
+            # self.w2 = nn.Linear(2 * hidden_size, hidden_size)
 
-        self.hidden_layers = layer_type(hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
+        self.hidden_layers = layer_type(hidden_size, hidden_size, num_layers=num_layers) #, dropout=dropout)
+        # Since the last layer does not get dropout applied using the above
         self.dropout = nn.Dropout(p=dropout)
         self.out = nn.Linear(hidden_size, len(dictionary))
         # Should we use logsoftmax?
         self.softmax = nn.LogSoftmax(dim=-1)
 
-    def forward(self, input, hidden, encoder_hiddens, concat_hidden=True):
+    def forward(self, input, hidden, encoder_hiddens):
         # hidden: [num_layers, bsz, hidden_size]
         # encoder_hiddens: [max_length, hidden_size]
         # input: int
         # embedded: [1,1, hidden_size]
         embedded = self.embedding(input).view(1, 1, -1)
+        self.dropout(embedded)
         attn_weights = None
         if self.use_attention:
             # Following JLTAAT we would supply the embeddings
@@ -115,7 +124,7 @@ class Decoder(nn.Module):
                 attn_weights
             ).sum(dim=-1).view(1, 1, -1)
             # ctxt_hidden: [1, 1, hidden_size * 2]
-            if concat_hidden:
+            if self.use_concat_hidden:
                 ctxt_cat = torch.cat((context, hidden), dim=-1)
             else:
                 ctxt_cat = torch.cat((context, embedded), dim=-1)
@@ -129,51 +138,11 @@ class Decoder(nn.Module):
             # "Last the hidden state is concatenated with c_i and mapped
             # to a softmax", so we reuse the context vecor here but
             # with the updaten hidden state.
-            new_ctxt_hidden = self.w2(torch.cat((context, hidden), dim=-1))
+            new_ctxt_hidden = self.w1(torch.cat((context, hidden), dim=-1))
             output = self.softmax(self.out(new_ctxt_hidden))
         else:
             output, hidden = self.hidden_layers(embedded, hidden)
             self.dropout(output)
-            output = self.softmax(self.out(output[0]))
-        return output, hidden, attn_weights
-
-
-class DecoderWithTaoAttention(nn.Module):
-    def _get_hidden_type(self):
-        raise NotImplementedError
-
-    def __init__(self, hidden_size, num_layers, dropout, dictionary, use_attention=False, max_length=64):
-        super(DecoderWithTaoAttention, self).__init__()
-        self.hidden_size = hidden_size
-        self.dictionary = dictionary
-        self.max_length = max_length
-        self.use_attention = use_attention
-        self.embedding = nn.Embedding(len(dictionary), hidden_size)
-
-        if use_attention:
-            self.attn = nn.Linear(self.hidden_size*2, self.max_length)
-            self.attn_combine = nn.Linear(self.hidden_size*2, self.hidden_size)
-            self.dropout = nn.Dropout(dropout)
-
-        layer_type = self._get_hidden_type()
-        self.hidden_layers = layer_type(hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
-        self.out = nn.Linear(hidden_size, len(dictionary))
-        self.softmax = nn.LogSoftmax(dim=1)
-
-    def forward(self, input, hidden, encoder_outputs):
-        embedded = self.embedding(input).view(1, 1, -1)
-        attn_weights = None
-        if self.use_attention:
-            # Should this be here? Or always/never?
-            embedded = self.dropout(embedded)
-            attn_weights = F.softmax(self.attn(torch.cat([embedded[0],hidden[0]],1)), dim = 1)
-            attn_applied = torch.bmm(attn_weights.unsqueeze(0), encoder_outputs.unsqueeze(0))
-            output = torch.cat([embedded[0],attn_applied[0]],1)
-            output = self.attn_combine(output).unsqueeze(0)
-            output, hidden = self.hidden_layers(output, hidden)
-            output = F.log_softmax(self.out(output[0]),dim=1)
-        else:
-            output, hidden = self.hidden_layers(embedded, hidden)
             output = self.softmax(self.out(output[0]))
         return output, hidden, attn_weights
 
@@ -197,7 +166,8 @@ class RNN(nn.Module):
         src_dictionary,
         tgt_dictionary,
         max_length=64,
-        use_attention=False):
+        use_attention=False,
+        use_concat_hidden=True):
         super(RNN, self).__init__()
 
         self.input_size = input_size
@@ -206,7 +176,7 @@ class RNN(nn.Module):
         
         # TODO: is this the same dropout as referenced in the paper? NO
         self.encoder = self._get_encoder()(input_size, hidden_size, num_layers, dropout, src_dictionary)
-        self.decoder = self._get_decoder()(hidden_size, num_layers, dropout, tgt_dictionary, use_attention=use_attention)
+        self.decoder = self._get_decoder()(hidden_size, num_layers, dropout, tgt_dictionary, use_attention=use_attention, use_concat_hidden=use_concat_hidden)
 
     def device(self):
         # TODO: consider optimizing
