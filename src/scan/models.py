@@ -2,10 +2,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-
-from data import generate_scan_dictionary, SCANDataset
 import numpy as np
+from data import generate_scan_dictionary, SCANDataset
 import random
+import pdb
+
 
 #
 # TODO: The dropout used here is not same as in paper!
@@ -86,15 +87,16 @@ class Decoder(nn.Module):
             self.hidden_layers = layer_type(hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
             self.w1 = nn.Linear(2*hidden_size , hidden_size)
             self.w2 = nn.Linear(2*hidden_size , hidden_size)
-            self.out = nn.Linear(hidden_size, len(dictionary))
+            self.out = nn.Linear(hidden_size, len(dictionary)-1)
         else:
             layer_type = self._get_hidden_type()
             self.hidden_layers = layer_type(hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)           
-            self.out = nn.Linear(hidden_size, len(dictionary))  
+            self.out = nn.Linear(hidden_size, len(dictionary)-1)  
         self.softmax = nn.LogSoftmax(dim=1)
 
 
     def forward(self, input, hidden, encoder_outputs):
+        # print(self.use_attention)ƒ
         embedded = self.embedding(input).view(1, 1, -1)
         embedded = self.dropout(embedded)
         attn_weights = None
@@ -109,6 +111,7 @@ class Decoder(nn.Module):
             # "Last the hidden state is concatenated with c_i and mapped
             # to a softmax"
             hidden = self.dropout(hidden)
+            # pdb.set_trace()
             output = self.out(self.w2(torch.cat((hidden, output),dim=-1)))[0]
         else:
             output, hidden = self.hidden_layers(embedded, hidden)
@@ -149,6 +152,7 @@ class DecoderWithTaoAttention(nn.Module):
             output = torch.cat([embedded[0],attn_applied[0]],1)
             output = self.attn_combine(output).unsqueeze(0)
             output, hidden = self.hidden_layers(output, hidden)
+            
             output = F.log_softmax(self.out(output[0]),dim=1)
         else:
             output, hidden = self.hidden_layers(embedded, hidden)
@@ -183,7 +187,9 @@ class RNN(nn.Module):
         super(RNN, self).__init__()
 
         self.input_size = input_size
-        self.max_length = 64
+        self.max_length = max_length
+        # self.use_attention = use_attention
+        # print(self.max_length)
         self.num_layers = num_layers
         self.type = self._get_type()
         
@@ -205,10 +211,13 @@ class RNN(nn.Module):
             torch.zeros(self.num_layers, batch_size, self.encoder.hidden_size, device=self.device(), requires_grad=True))
         # return torch.zeros(self.num_layers, 1, self.encoder.hidden_size, device=self.device(), requires_grad=True)
 
-#     def forward(self, input, target, teacher_forcing=False, oracle=False):
-    def forward(self, input, target, teacher_forcing_ratio,oracle=False):
+    def forward(self, input, target, oracle=False,train_or_test='train',teacher_forcing_ratio=0.5):
         input_length = input.shape[0]
         target_length = target.shape[0]
+        if oracle == True or train_or_test=='train':
+            max_length = target_length
+        else:
+            max_length = 48
 
         # Store state for encoder steps
         encoder_outputs = torch.zeros(
@@ -237,38 +246,37 @@ class RNN(nn.Module):
 
         decoder_outputs = []
         # breakpoint()
-        for idx in range(target_length):
+        # print(train_or_test,oracle,max_length)
+        for idx in range(max_length):
             decoder_output, decoder_hidden, _ = self.decoder(
                 decoder_input, decoder_hidden, encoder_outputs
             )
             
             decoder_outputs.append(decoder_output)
-            
-            use_teacher_forcing = True if random.random() <= teacher_forcing_ratio else False
-            if use_teacher_forcing:
-                decoder_input = target[idx]  # Teacher forcing
-            else:
-               _topv, topi = decoder_output.topk(1)
-               decoder_input = topi.squeeze().clone().detach()  # detach from history as input
-
-            
-            
-            if decoder_input.item() == self.decoder.dictionary[self.EOS]:
-                if not oracle:
-                    break
+            if train_or_test == 'train':
+                use_teacher_forcing = True if random.random() <= teacher_forcing_ratio else False
+                if use_teacher_forcing:
+                    decoder_input = target[idx]  # Teacher forcing
                 else:
-                   _topv, topi = decoder_output.topk(2)
-                   decoder_input = topi[1].squeeze().clone().detach()  # detach from history as input
-#             if teacher_forcing:
-#                 decoder_input = target[idx]  # Teacher forcing
-#             else:
-#                _topv, topi = decoder_output.topk(1)
-#                decoder_input = topi.squeeze().clone().detach()  # detach from history as input
-            
-            
-#             if decoder_input.item() == self.decoder.dictionary[self.EOS]:
-#                 if oracle == False:
-#                    break
+                   _topv, topi = decoder_output.topk(1)
+                   decoder_input = topi.squeeze().clone().detach()  # detach from history as input
+                   
+                if decoder_input.item() == self.decoder.dictionary[self.EOS]:
+                    break
+
+            else:
+                use_teacher_forcing = False
+                _topv, topi = decoder_output.topk(1)
+                decoder_input = topi.squeeze().clone().detach()  # detach from history as input               
+                
+                if decoder_input.item() == self.decoder.dictionary[self.EOS]:
+                    if not oracle:
+                        break
+                    else:
+                        # print(decoder_output.shape)
+                        # print(decoder_output[0].topk(2))
+                        _topv, topi = decoder_output[0].topk(2)
+                        decoder_input = topi[1].squeeze().clone().detach()  # detach from history as input
 
         # Remove BOS
         return torch.stack(decoder_outputs) 
