@@ -34,13 +34,16 @@ def generate_scan_dictionary(full_dataset, add_bos=True, add_eos=True):
     
     action_dict["PAD"] = len(action_dict)
     command_dict["PAD"] = len(command_dict)
-
-    if add_bos:
-        action_dict["BOS"] = len(action_dict)
-        command_dict["BOS"] = len(command_dict)
+    
     if add_eos:
         action_dict["EOS"] = len(action_dict)
         command_dict["EOS"] = len(command_dict)
+    if add_bos:
+        action_dict["BOS"] = len(action_dict)
+        command_dict["BOS"] = len(command_dict)
+#     if add_eos:
+#         action_dict["EOS"] = len(action_dict)
+#         command_dict["EOS"] = len(command_dict)
 
     return command_dict, action_dict
 
