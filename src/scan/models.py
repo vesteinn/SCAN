@@ -4,7 +4,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 from data import generate_scan_dictionary, SCANDataset
-
+import numpy as np
+import random
 
 #
 # TODO: The dropout used here is not same as in paper!
@@ -204,7 +205,8 @@ class RNN(nn.Module):
             torch.zeros(self.num_layers, batch_size, self.encoder.hidden_size, device=self.device(), requires_grad=True))
         # return torch.zeros(self.num_layers, 1, self.encoder.hidden_size, device=self.device(), requires_grad=True)
 
-    def forward(self, input, target, teacher_forcing=False, oracle=False):
+#     def forward(self, input, target, teacher_forcing=False, oracle=False):
+    def forward(self, input, target, teacher_forcing_ratio,oracle=False):
         input_length = input.shape[0]
         target_length = target.shape[0]
 
@@ -241,16 +243,32 @@ class RNN(nn.Module):
             )
             
             decoder_outputs.append(decoder_output)
-            if teacher_forcing:
+            
+            use_teacher_forcing = True if random.random() <= teacher_forcing_ratio else False
+            if use_teacher_forcing:
                 decoder_input = target[idx]  # Teacher forcing
             else:
                _topv, topi = decoder_output.topk(1)
                decoder_input = topi.squeeze().clone().detach()  # detach from history as input
+
             
             
             if decoder_input.item() == self.decoder.dictionary[self.EOS]:
-                if oracle == False:
-                   break
+                if not oracle:
+                    break
+                else:
+                   _topv, topi = decoder_output.topk(2)
+                   decoder_input = topi[1].squeeze().clone().detach()  # detach from history as input
+#             if teacher_forcing:
+#                 decoder_input = target[idx]  # Teacher forcing
+#             else:
+#                _topv, topi = decoder_output.topk(1)
+#                decoder_input = topi.squeeze().clone().detach()  # detach from history as input
+            
+            
+#             if decoder_input.item() == self.decoder.dictionary[self.EOS]:
+#                 if oracle == False:
+#                    break
 
         # Remove BOS
         return torch.stack(decoder_outputs) 
