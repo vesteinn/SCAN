@@ -13,6 +13,7 @@ from data import SCANDataset
 from models1 import GRURNN
 from models1 import LSTMRNN
 import pdb
+from time import time
  
 
 MODEL_MAP = {
@@ -21,7 +22,7 @@ MODEL_MAP = {
 }
 
 
-def eval(model, dataset, bsz=1):
+def eval(model, dataset, oracle,bsz=1):
     accuracy = []
     data_loader = DataLoader(dataset, batch_size=bsz)
     error = []
@@ -36,13 +37,14 @@ def eval(model, dataset, bsz=1):
                 src = src.unsqueeze(dim=0)
             if len(tgt.shape) == 0:
                 tgt = tgt.unsqueeze(dim=0)
-            output = model(src, tgt)
+            output = model(src, tgt , oracle)
             correct_seq = True
             for out_idx, out in enumerate(output):
-                if out_idx == 0:
-                    # Skip BOS
-                    continue
-                tgt_idx = out_idx - 1  # ignore BOS
+                # if out_idx == 0:
+                #     # Skip BOS
+                #     continue
+                # tgt_idx = out_idx - 1  # ignore BOS
+                tgt_idx = out_idx
                 target = tgt[tgt_idx]
                 # output is logsoftmax
                 predicted = torch.exp(out).argmax() #torch.nn.functional.softmax(out, dim=-1).squeeze().argmax()
@@ -55,7 +57,7 @@ def eval(model, dataset, bsz=1):
     return accuracy,error
 
 
-def train(train_dataset, eval_dataset,MODEL_MAP, model_name,hidden_dim, layers, dropout, src_dict, tgt_dict, use_attention,device,num_classes, name, lr=0.001, eval_interval=1000, bsz=1, steps=100000, teacher_forcing_ratio=0.5):
+def train(train_dataset, eval_dataset,MODEL_MAP, model_name,hidden_dim, layers, dropout, src_dict, tgt_dict, use_attention,device,num_classes, name, oracle,lr=0.001, eval_interval=1000, bsz=1, steps=100000, teacher_forcing_ratio=0.5):
 
     # step = 0
     max_acc = 0
@@ -80,9 +82,10 @@ def train(train_dataset, eval_dataset,MODEL_MAP, model_name,hidden_dim, layers, 
         acc_step = []
         loss_sum = 0
         loss_step = 0
+        start = time()
         for i in range(steps):
         # for idx, data in enumerate(data_loader):
-            index = np.random_choice(len(train_dataset))
+            index = np.random.randint(len(train_dataset))
             optimizer.zero_grad()
             src, tgt = train_dataset[index]
             if src.shape[0] == tgt.shape[0] == 1:
@@ -92,16 +95,19 @@ def train(train_dataset, eval_dataset,MODEL_MAP, model_name,hidden_dim, layers, 
                 src = src.unsqueeze(dim=0)
                 tgt = tgt.unsqueeze(dim=0)
 
-            use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
-            output = model(src, tgt, teacher_forcing=use_teacher_forcing)
+            
+            output = model(src, tgt, teacher_forcing_ratio)
             loss = torch.tensor(0.0, device=model.device())
             correct_seq = True
             for out_idx, out in enumerate(output):
-                if out_idx == 0:
-                    # Skip BOS
-                    continue
-                tgt_idx = out_idx - 1  # ignore BOS
+                # if out_idx == 0:
+                #     # Skip BOS
+                #     continue
+                # tgt_idx = out_idx - 1  # ignore BOS
+                tgt_idx = out_idx
                 target = tgt[tgt_idx]
+                if target== torch.tensor(7):
+                    print(7)
                 predicted = torch.exp(out).argmax() #torch.nn.functional.softmax(out, dim=-1).squeeze().argmax()
                 if target != predicted:
                     # Whole sequence needs to be correct
@@ -117,8 +123,8 @@ def train(train_dataset, eval_dataset,MODEL_MAP, model_name,hidden_dim, layers, 
             loss_sum += loss
             loss_step += loss
             
-            if not idx % 1000:
-                print(f"Epoch {epoch+1} Step {idx} - training loss: {loss_step / 1000} - training accuracy: {sum(acc_step)/10:.02f} %")
+            if not i % 1000:
+                print(f"Epoch {epoch+1} Step {i} - training loss: {loss_step / 1000} - training accuracy: {sum(acc_step)/10:.02f} %")
                 loss_step = 0
                 acc_step = []
 
@@ -132,16 +138,17 @@ def train(train_dataset, eval_dataset,MODEL_MAP, model_name,hidden_dim, layers, 
             
         #print valid result
         print("Running eval...")
-        eval_data,_ = eval(model, eval_dataset)
+        eval_data,_ = eval(model, eval_dataset,oracle)
         eval_acc = 100 * sum(eval_data) / len(eval_data)
         accs.append(eval_acc)
         max_acc = max(accs)
         
         #print train result
-        train_data,_ = eval(model, train_dataset)
-        train_acc = 100 * sum(train_data) / len(train_data)
-        
-        print(f"Epoch {epoch+1} - Train_acc: {train_acc:.02f} - Eval_acc: {eval_acc:.02f} % over {len(eval_data)} data points (max {max_acc}).")
+        # train_data,_ = eval(model, train_dataset ,oracle)
+        # train_acc = 100 * sum(train_data) / len(train_data)
+        end = time()
+        # print(f"Epoch {epoch+1} - Train_acc: {train_acc:.02f} - Eval_acc: {eval_acc:.02f} % over {len(eval_data)} data points (max {max_acc}) - Time: {end - start}s")
+        print(f"Epoch {epoch+1} - Eval_acc: {eval_acc:.02f} % over {len(eval_data)} data points (max {max_acc}) - Time: {end - start}s")
         if eval_acc >= best_eval_acc:
             best_eval_acc = eval_acc
             print("Found new best model on dev set!")
@@ -151,7 +158,7 @@ def train(train_dataset, eval_dataset,MODEL_MAP, model_name,hidden_dim, layers, 
 
     # model.load_state_dict(torch.load('model_best.std'))
     print(f"Finished - running eval...")
-    eval_data,error = eval(model, eval_dataset)
+    eval_data,error = eval(model, eval_dataset ,oracle)
     eval_acc = 100 * sum(eval_data) / len(eval_data)
     max_acc = max(accs)
     #average over 10 runs
@@ -177,6 +184,7 @@ if __name__ == "__main__":
     parser.add_argument("--clip", type=float, default=5)
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
     parser.add_argument("--use_attention", type=str, default=False)
+    parser.add_argument("--oracle", type=str, default=False)
     
     args = parser.parse_args()
 
@@ -199,7 +207,7 @@ if __name__ == "__main__":
     # model = model(len(src_dict), args.hidden_dim, args.layers, args.dropout, src_dict, tgt_dict, args.use_attention)
     # model.to(args.device)
     # pdb.set_trace()
-    error = train(train_dataset= train_dataset, eval_dataset = valid_dataset, MODEL_MAP = MODEL_MAP,model_name = args.model, hidden_dim=args.hidden_dim, layers=args.layers, dropout=args.dropout, src_dict, tgt_dict, use_attention=args.use_attention, device = args.device,num_classes=len(tgt_dict), name = args.name, steps=args.steps, teacher_forcing_ratio=args.teacher_forcing_ratio, eval_interval=args.eval_interval)
+    error = train(train_dataset= train_dataset, eval_dataset = valid_dataset, MODEL_MAP = MODEL_MAP,model_name = args.model, hidden_dim=args.hidden_dim, layers=args.layers, dropout=args.dropout, src_dict=src_dict, tgt_dict=tgt_dict, use_attention=args.use_attention, device = args.device,num_classes=len(tgt_dict), name = args.name, oracle = args.oracle,steps=args.steps, teacher_forcing_ratio=args.teacher_forcing_ratio, eval_interval=args.eval_interval)
     
     
 
