@@ -94,7 +94,7 @@ class Decoder(nn.Module):
             # We can use w1 in both cases when using the same concat?
             # Experiments show this gave better results, but using w2
             # is more in line with the paper.
-            # self.w2 = nn.Linear(2 * hidden_size, hidden_size)
+            self.w2 = nn.Linear(2 * hidden_size, hidden_size)
 
         self.hidden_layers = layer_type(hidden_size, hidden_size, num_layers=num_layers) #, dropout=dropout)
         # Since the last layer does not get dropout applied using the above
@@ -126,19 +126,21 @@ class Decoder(nn.Module):
             # ctxt_hidden: [1, 1, hidden_size * 2]
             if self.use_concat_hidden:
                 ctxt_cat = torch.cat((context, hidden), dim=-1)
+                output, hidden = self.hidden_layers(embedded, self.w1(ctxt_cat))
             else:
                 ctxt_cat = torch.cat((context, embedded), dim=-1)
+                output, hidden = self.hidden_layers(self.w1(ctxt_cat), hidden)
             # The supplement is quite explicit that the context vector
             # is passed as input to the decoder RNN, but the attention
             # could also be applied afterwards.
             # We project the context to the hidden size.
             # output, hidden = self.hidden_layers(embedded, self.w(ctxt_hidden))
-            output, hidden = self.hidden_layers(self.w1(ctxt_cat), hidden)
+    
             self.dropout(output)
             # "Last the hidden state is concatenated with c_i and mapped
             # to a softmax", so we reuse the context vecor here but
             # with the updaten hidden state.
-            new_ctxt_hidden = self.w1(torch.cat((context, hidden), dim=-1))
+            new_ctxt_hidden = self.w2(torch.cat((context, hidden), dim=-1))
             output = self.softmax(self.out(new_ctxt_hidden))
         else:
             output, hidden = self.hidden_layers(embedded, hidden)
