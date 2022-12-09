@@ -33,7 +33,6 @@ class Encoder(nn.Module):
         embedded = self.embedding(input).view(1, 1, -1)
         self.dropout(embedded)
         output, hidden = self.hidden_layers(embedded, hidden)
-        output = self.dropout(output)
         return output, hidden
 
 
@@ -92,16 +91,17 @@ class Decoder(nn.Module):
             # To project the concatenated vector to the hidden_size
             self.w1 = nn.Linear(2 * hidden_size, hidden_size)
             # We can use w1 in both cases when using the same concat?
-            # Experiments show this gave better results, but using w2
-            # is more in line with the paper.
+            # Initial experiments show this gave better results (unclear why),
+            # but using w2 makes more sense.
             self.w2 = nn.Linear(2 * hidden_size, hidden_size)
 
-        self.hidden_layers = layer_type(hidden_size, hidden_size, num_layers=num_layers) #, dropout=dropout)
+        self.hidden_layers = layer_type(
+            hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
         # Since the last layer does not get dropout applied using the above
         self.dropout = nn.Dropout(p=dropout)
         self.out = nn.Linear(hidden_size, len(dictionary))
-        # Should we use logsoftmax?
-        self.softmax = nn.LogSoftmax(dim=-1)
+        # Should we use logsoftmax, let's work with raw logits
+        #self.softmax = nn.LogSoftmax(dim=-1)
 
     def forward(self, input, hidden, encoder_hiddens):
         # hidden: [num_layers, bsz, hidden_size]
@@ -136,16 +136,16 @@ class Decoder(nn.Module):
             # We project the context to the hidden size.
             # output, hidden = self.hidden_layers(embedded, self.w(ctxt_hidden))
     
-            self.dropout(output)
             # "Last the hidden state is concatenated with c_i and mapped
             # to a softmax", so we reuse the context vecor here but
             # with the updaten hidden state.
             new_ctxt_hidden = self.w2(torch.cat((context, hidden), dim=-1))
-            output = self.softmax(self.out(new_ctxt_hidden))
+            #output = self.softmax(self.out(new_ctxt_hidden))
+            output = self.out(new_ctxt_hidden)
         else:
             output, hidden = self.hidden_layers(embedded, hidden)
-            self.dropout(output)
-            output = self.softmax(self.out(output[0]))
+            #output = self.softmax(self.out(output[0]))
+            output = self.out(output[0])
         return output, hidden, attn_weights
 
 
@@ -191,9 +191,13 @@ class RNN(nn.Module):
             return self.num_layers * [torch.zeros(self.num_layers, 1, self.encoder.hidden_size, device=self.device(), requires_grad=True)]
         return torch.zeros(self.num_layers, 1, self.encoder.hidden_size, device=self.device(), requires_grad=True)
 
-    def forward(self, input, target, teacher_forcing=False):
+    def forward(self, input, target, teacher_forcing=False, use_oracle=False):
         input_length = input.shape[0]
         target_length = target.shape[0]
+
+        decoder_max_len = self.max_length
+        if teacher_forcing or use_oracle:
+            decoder_max_len = target_length
 
         # Store state for encoder steps
         encoder_hiddens = torch.zeros(
@@ -227,7 +231,7 @@ class RNN(nn.Module):
 
         decoder_outputs = []
 
-        for idx in range(target_length):
+        for idx in range(decoder_max_len):
             decoder_output, decoder_hidden, _ = self.decoder(
                 decoder_input, decoder_hidden, encoder_hiddens
             )

@@ -34,31 +34,34 @@ def eval(model, dataset, bsz=1):
                 src = src.unsqueeze(dim=0)
             if len(tgt.shape) == 0:
                 tgt = tgt.unsqueeze(dim=0)
+            # Safe to add tgt since we are not teacher forcing
             output = model(src, tgt)
             correct_seq = True
-            for out_idx, out in enumerate(output):
-                if out_idx == 0:
-                    # Skip BOS
-                    continue
-                tgt_idx = out_idx - 1  # ignore BOS
-                target = tgt[tgt_idx]
-                # output is logsoftmax
-                predicted = torch.exp(out).argmax() #torch.nn.functional.softmax(out, dim=-1).squeeze().argmax()
-                if target != predicted:
-                    # Whole sequence needs to be correct
-                    correct_seq = False
-            accuracy.append(correct_seq)
+            if len(tgt) != len(output):
+                correct_seq = False
+            else:
+                for out_idx, out in enumerate(output):
+                    if out_idx == output.shape[-1] - 1:
+                        break
+                    target = tgt[out_idx]
+                    # output is logsoftmax, is it? no more torch.exp(out).argmax() 
+                    predicted = torch.nn.functional.log_softmax(out, dim=-1).squeeze().argmax()
+                    if target != predicted:
+                        # Whole sequence needs to be correct
+                        correct_seq = False
+                accuracy.append(correct_seq)
     return accuracy  
 
 
-def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_interval=1000, bsz=1, steps=100000, teacher_forcing_ratio=0.5):
+max_length = 64
+def train(model, train_dataset, eval_dataset, name, lr=0.001, eval_interval=1000, bsz=1, steps=100000, teacher_forcing_ratio=0.5, use_oracle=False):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    data_loader = DataLoader(train_dataset, batch_size=bsz)
+    data_loader = DataLoader(train_dataset, batch_size=bsz, shuffle=True)
     step = 0
     loss_sum = 0
     max_acc = 0
     accs = []
-    for epoch in range(1 + steps // len(data_loader)):
+    for _epoch in range(1 + steps // len(data_loader)):
         for idx, data in enumerate(data_loader):
             optimizer.zero_grad()
             src, tgt = data
@@ -70,27 +73,26 @@ def train(model, train_dataset, eval_dataset, num_classes, name, lr=0.001, eval_
                 tgt = tgt.unsqueeze(dim=0)
 
             use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
-            output = model(src, tgt, teacher_forcing=use_teacher_forcing)
-            loss = torch.tensor(0.0, device=model.device())
-            for out_idx, out in enumerate(output):
-                if out_idx == 0:
-                    # Skip BOS
-                    continue
-                tgt_idx = out_idx - 1  # ignore BOS
-                target_oh  = torch.nn.functional.one_hot(tgt[tgt_idx], num_classes)
-                loss += torch.nn.functional.binary_cross_entropy(
-                    torch.nn.functional.softmax(out, dim=-1).squeeze(),
-                    target_oh.float()
-                )
+            output = model(src, tgt, teacher_forcing=use_teacher_forcing, use_oracle=use_oracle)
+
+            # works for bsz 1
+            pad_zeros = torch.zeros(max_length - output.shape[0], output.shape[-1]).to("cuda")
+            output_pad = torch.cat((output.reshape(-1, output.shape[-1]), pad_zeros), dim=0)
+            
+            tgt_pad = torch.nn.functional.pad(tgt, (0, max_length - len(tgt)))
+            try:
+                loss = torch.nn.functional.cross_entropy(output_pad, tgt_pad)
+            except:
+                breakpoint()
 
             loss_sum += loss
-            if not idx % 100:
-                print(f"Step {step} - training loss: {loss_sum / 100}")
+            if not idx % 1000:
+                print(f"Step {step} - training loss: {loss_sum / 1000}")
                 loss_sum = 0
 
             step += 1
             if loss.requires_grad:
-                # Why is this needed...?
+                # Why is this needed...? Try remove now, should be fixed
                 loss.backward()
             
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
@@ -132,6 +134,7 @@ if __name__ == "__main__":
     parser.add_argument("--dropout", type=float, default=0.5)
     parser.add_argument("--clip", type=float, default=5)
     parser.add_argument("--use_attention", action='store_true', default=False)
+    parser.add_argument("--use_oracle", action='store_true', default=False)
     parser.add_argument("--use_concat_hidden", action='store_true', default=False)
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
     
@@ -164,7 +167,15 @@ if __name__ == "__main__":
         use_concat_hidden=args.use_concat_hidden
     )
     model.to(args.device)
-    train(model, train_dataset, valid_dataset, len(tgt_dict), args.name, steps=args.steps, teacher_forcing_ratio=args.teacher_forcing_ratio, eval_interval=args.eval_interval)
+    train(
+        model,
+        train_dataset,
+        valid_dataset,
+        args.name,
+        steps=args.steps,
+        teacher_forcing_ratio=args.teacher_forcing_ratio,
+        eval_interval=args.eval_interval,
+        use_oracle=args.use_oracle)
     
 
 
