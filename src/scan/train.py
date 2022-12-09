@@ -54,7 +54,7 @@ def eval(model, dataset, bsz=1):
 
 
 max_length = 64
-def train(model, train_dataset, eval_dataset, name, lr=0.001, eval_interval=1000, bsz=1, steps=100000, teacher_forcing_ratio=0.5, use_oracle=False):
+def train(model, train_dataset, eval_dataset, name, lr=0.001, eval_interval=1000, bsz=1, steps=100000, teacher_forcing_ratio=0.5, use_oracle=False, device="cpu"):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     data_loader = DataLoader(train_dataset, batch_size=bsz, shuffle=True)
     step = 0
@@ -76,7 +76,7 @@ def train(model, train_dataset, eval_dataset, name, lr=0.001, eval_interval=1000
             output = model(src, tgt, teacher_forcing=use_teacher_forcing, use_oracle=use_oracle)
 
             # works for bsz 1
-            pad_zeros = torch.zeros(max_length - output.shape[0], output.shape[-1]).to("cuda")
+            pad_zeros = torch.zeros(max_length - output.shape[0], output.shape[-1]).to(device)
             output_pad = torch.cat((output.reshape(-1, output.shape[-1]), pad_zeros), dim=0)
             
             tgt_pad = torch.nn.functional.pad(tgt, (0, max_length - len(tgt)))
@@ -175,7 +175,8 @@ if __name__ == "__main__":
         steps=args.steps,
         teacher_forcing_ratio=args.teacher_forcing_ratio,
         eval_interval=args.eval_interval,
-        use_oracle=args.use_oracle)
+        use_oracle=args.use_oracle,
+        device=args.device)
     
 
 
