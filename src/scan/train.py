@@ -20,11 +20,15 @@ MODEL_MAP = {
 }
 
 
-def eval(model, dataset, bsz=1):
+def eval(model, dataset, bsz=1, verbose=False):
+
+    src_dict = {v: k for k, v in dataset.src_dict.items()}
+    tgt_dict = {v: k for k, v in dataset.tgt_dict.items()}
+
     accuracy = []
     data_loader = DataLoader(dataset, batch_size=bsz)
     with torch.no_grad():
-        for idx, data in tqdm.tqdm(enumerate(data_loader), total=len(dataset)):
+        for _, data in tqdm.tqdm(enumerate(data_loader), total=len(dataset)):
             src, tgt = data
             if len(src.shape) > 1 and len(tgt.shape) > 1 \
                     and src.shape[0] == tgt.shape[0] == 1:
@@ -37,19 +41,33 @@ def eval(model, dataset, bsz=1):
             # Safe to add tgt since we are not teacher forcing
             output = model(src, tgt)
             correct_seq = True
+            predicted = []
+            probs = []
             if len(tgt) != len(output):
                 correct_seq = False
             else:
                 for out_idx, out in enumerate(output):
-                    if out_idx == output.shape[-1] - 1:
-                        break
                     target = tgt[out_idx]
-                    # output is logsoftmax, is it? no more torch.exp(out).argmax() 
-                    predicted = torch.nn.functional.log_softmax(out, dim=-1).squeeze().argmax()
-                    if target != predicted:
+                    prob = torch.nn.functional.log_softmax(out, dim=-1).squeeze()
+                    probs.append(prob)
+                    pred = prob.argmax()
+                    predicted.append(pred)
+                    if target != pred:
                         # Whole sequence needs to be correct
                         correct_seq = False
-                accuracy.append(correct_seq)
+
+            decoded_src = " ".join([src_dict[t.item()] for t in src])
+            decoded_tgt = " ".join([tgt_dict[t.item()] for t in tgt])
+            decoded_pred = " ".join([tgt_dict[t.item()] for t in predicted])
+            try:
+                assert (decoded_tgt == decoded_pred) == correct_seq
+            except:
+                breakpoint()
+            if verbose:             
+                print(f"src: {decoded_src}, tgt: {decoded_tgt}, pred: {decoded_pred}")
+
+            accuracy.append(correct_seq)
+    assert len(accuracy) == len(dataset)
     return accuracy  
 
 
@@ -62,7 +80,7 @@ def train(model, train_dataset, eval_dataset, name, lr=0.001, eval_interval=1000
     max_acc = 0
     accs = []
     for _epoch in range(1 + steps // len(data_loader)):
-        for idx, data in enumerate(data_loader):
+        for idx, data in tqdm.tqdm(enumerate(data_loader), total=len(data_loader)):
             optimizer.zero_grad()
             src, tgt = data
             if src.shape[0] == tgt.shape[0] == 1:
@@ -80,25 +98,20 @@ def train(model, train_dataset, eval_dataset, name, lr=0.001, eval_interval=1000
             output_pad = torch.cat((output.reshape(-1, output.shape[-1]), pad_zeros), dim=0)
             
             tgt_pad = torch.nn.functional.pad(tgt, (0, max_length - len(tgt)))
-            try:
-                loss = torch.nn.functional.cross_entropy(output_pad, tgt_pad)
-            except:
-                breakpoint()
+            loss = torch.nn.functional.cross_entropy(output_pad, tgt_pad)
+            loss.backward()
 
             loss_sum += loss
-            if not idx % 1000:
+            if not step % 1000:
                 print(f"Step {step} - training loss: {loss_sum / 1000}")
                 loss_sum = 0
 
             step += 1
-            if loss.requires_grad:
-                # Why is this needed...? Try remove now, should be fixed
-                loss.backward()
-            
+
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
             optimizer.step()
             
-            if idx and not idx % eval_interval:
+            if not step % eval_interval:
                 print(f"Step {step} - running eval...")
                 eval_data = eval(model, eval_dataset)
                 eval_acc = 100 * sum(eval_data) / len(eval_data)
@@ -137,8 +150,12 @@ if __name__ == "__main__":
     parser.add_argument("--use_oracle", action='store_true', default=False)
     parser.add_argument("--use_concat_hidden", action='store_true', default=False)
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
-    
+    parser.add_argument("--seed", type=int, default=None)
+
     args = parser.parse_args()
+
+    if args.seed is not None:
+        torch.manual_seed(args.seed)
 
     print("Starting SCAN training")
     print(f"{args}")
@@ -150,7 +167,6 @@ if __name__ == "__main__":
     src_dict, tgt_dict = generate_scan_dictionary(tasks, add_bos=True, add_eos=True) 
     train_dataset = SCANDataset(args.train, src_dict, tgt_dict, device=args.device)
     valid_dataset = SCANDataset(args.valid, src_dict, tgt_dict, device=args.device)
-   
     print(f"Loaded train dataset with {len(train_dataset)} entries")
     print(f"Loaded validation dataset with {len(valid_dataset)} entries")
 
