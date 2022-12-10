@@ -32,7 +32,6 @@ def eval(
     model,
     dataset,
     bsz=1,
-    verbose=False,
     log_target_probs=False,
     use_oracle=False,
     verbose=False,
