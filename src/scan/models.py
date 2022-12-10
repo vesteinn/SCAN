@@ -6,14 +6,6 @@ import torch.optim as optim
 from data import generate_scan_dictionary, SCANDataset
 
 
-#
-# TODO: The dropout used here is not same as in paper!
-#       LSTM/GRU do not support dropout with a single layer.
-#       We need a drop out layer after also !
-# From paper: Dropout is "applied to recurrent layers and word embeddings"
-#
-
-
 class Encoder(nn.Module):
     def _get_hidden_type(self):
         raise NotImplementedError
@@ -127,7 +119,10 @@ class Decoder(nn.Module):
             # According to the suplement, only the hidden state
             # is fed to the attention layer
             # context: [max_length, hidden_size]
-            attn_weights = self.attention(hidden, encoder_hiddens)
+            if self.model_type == "lstm":
+                attn_weights = self.attention(hidden[0], encoder_hiddens)
+            else:
+                attn_weights = self.attention(hidden, encoder_hiddens)
             # context: [num_hidden, num_hidden]
             context = torch.mm(
                 attn_weights.unsqueeze(dim=0),
@@ -145,8 +140,10 @@ class Decoder(nn.Module):
             # "Last the hidden state is concatenated with c_i and mapped
             # to a softmax", so we reuse the context vecor here but
             # with the updaten hidden state.
-            # new_ctxt_hidden = torch.cat((context.view(1,1,-1), hidden), dim=-1)
-            new_ctxt_hidden = torch.cat((context.view(1, 1, -1), hidden), dim=-1)
+            if self.model_type == "lstm":
+                new_ctxt_hidden = torch.cat((context.view(1, 1, -1), hidden[0]), dim=-1)
+            else:
+                new_ctxt_hidden = torch.cat((context.view(1, 1, -1), hidden), dim=-1)
             output = self.out(new_ctxt_hidden)
         else:
             output, hidden = self.hidden_layers(embedded, hidden)
@@ -159,6 +156,8 @@ class RNN(nn.Module):
     # TODO: make dictionary class and write there
     EOS = "EOS"
     BOS = "BOS"
+
+    model_type = None
 
     def _get_encoder(self):
         raise NotImplementedError
@@ -176,7 +175,7 @@ class RNN(nn.Module):
         tgt_dictionary,
         max_length=64,
         use_attention=False,
-        use_concat_hidden=True,
+        use_concat_hidden=True
     ):
         super(RNN, self).__init__()
 
@@ -184,7 +183,6 @@ class RNN(nn.Module):
         self.max_length = max_length
         self.num_layers = num_layers
 
-        # TODO: is this the same dropout as referenced in the paper? NO
         self.encoder = self._get_encoder()(
             input_size, hidden_size, num_layers, dropout, src_dictionary
         )
@@ -202,9 +200,8 @@ class RNN(nn.Module):
         return next(self.encoder.parameters()).device
 
     def init_hidden(self):
-        if self.num_layers > 1:
-            # LSTM
-            return self.num_layers * [
+        if self.model_type == "lstm":
+            return 2 * [
                 torch.zeros(
                     self.num_layers,
                     1,
@@ -234,15 +231,13 @@ class RNN(nn.Module):
         encoder_hiddens = torch.zeros(
             self.max_length, self.encoder.hidden_size, device=self.device()
         )
-
+        
         encoder_hidden = self.init_hidden()
         for idx in range(input_length):
             _enc_output, encoder_hidden = self.encoder(input[idx], encoder_hidden)
-            if self.num_layers > 1:
-                # LSTM
+            if self.model_type == "lstm":
                 (enc_hidden, _enc_cell) = encoder_hidden
             else:
-                # GRU
                 enc_hidden = encoder_hidden
 
             # -1 for the last layer!
@@ -296,16 +291,22 @@ class RNN(nn.Module):
 
 
 class LSTMEncoder(Encoder):
+    model_type = "lstm"
+
     def _get_hidden_type(self):
         return nn.LSTM
 
 
 class LSTMDecoder(Decoder):
+    model_type = "lstm"
+
     def _get_hidden_type(self):
         return nn.LSTM
 
 
 class LSTMRNN(RNN):
+    model_type = "lstm"
+
     def _get_encoder(self):
         return LSTMEncoder
 
@@ -319,16 +320,22 @@ class LSTMRNN(RNN):
 
 
 class GRUEncoder(Encoder):
+    model_type = "gru"
+
     def _get_hidden_type(self):
         return nn.GRU
 
 
 class GRUDecoder(Decoder):
+    model_type = "gru"
+
     def _get_hidden_type(self):
         return nn.GRU
 
 
 class GRURNN(RNN):
+    model_type = "gru"
+    
     def _get_encoder(self):
         return GRUEncoder
 

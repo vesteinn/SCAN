@@ -18,7 +18,7 @@ for i in {0..4}; do
 	 --name ${model_name} \
 	 --log_target_probs \
 	 --train $train_file --valid $valid_file --model lstm \
-         --layers 1 --hidden_dim 100 --eval_interval 5000 > $log_file
+         --layers 1 --hidden_dim 100 --eval_interval 5000 #> $log_file
     tail -n 1 $log_file
     echo "--"
 done
