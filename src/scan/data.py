@@ -13,7 +13,7 @@ def generate_scan_dictionary(full_dataset, add_bos=True, add_eos=True):
     # Example (split on separator):
     # IN: walk opposite right thrice after run opposite right
     # OUT: I_TURN_RIGHT I_TURN_RIGHT I_RUN I_TURN_RIGHT I_TURN_RIGHT I_WALK I_TURN_RIGHT I_TURN_RIGHT I_WALK I_TURN_RIGHT I_TURN_RIGHT I_WALK
-    # 
+    #
     command_dict = dict()
     action_dict = dict()
 
@@ -25,13 +25,13 @@ def generate_scan_dictionary(full_dataset, add_bos=True, add_eos=True):
             command, action = parse_action_command(line)
             commands.update(set(command.split()))
             actions.update(set(action.split()))
-    
+
     # Sorted needed for deterministic id's
     for idx, action in enumerate(sorted(actions)):
         action_dict[action] = idx
     for idx, command in enumerate(sorted(commands)):
         command_dict[command] = idx
-    
+
     action_dict["PAD"] = len(action_dict)
     command_dict["PAD"] = len(command_dict)
 
@@ -81,7 +81,7 @@ class SCANDataset(torch.utils.data.Dataset):
                 command, action = parse_action_command(line)
                 self.commands.append(self.encode_command(command))
                 self.actions.append(self.encode_action(action))
-         
+
 
 if __name__ == "__main__":
     # Simple test for ScanDataset, assumes submodule with data
@@ -90,7 +90,9 @@ if __name__ == "__main__":
     src_dict, tgt_dict = generate_scan_dictionary(tasks)
     assert len(src_dict) > 0
     assert len(tgt_dict) > 0
-    print(f"Dictionaries lodaded, {len(src_dict)} in src_dict, {len(tgt_dict)} in tgt_dict.")
+    print(
+        f"Dictionaries lodaded, {len(src_dict)} in src_dict, {len(tgt_dict)} in tgt_dict."
+    )
 
     dataset = SCANDataset(tasks, src_dict, tgt_dict, "cpu")
     assert len(dataset) > 2000
