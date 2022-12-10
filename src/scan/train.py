@@ -31,7 +31,7 @@ def acc_process(acc_dict):
     return stats
 
 
-def eval(model, dataset, bsz=1, verbose=False, log_target_probs=False):
+def eval(model, dataset, bsz=1, verbose=False, log_target_probs=False, use_oracle=False):
 
     src_dict = {v: k for k, v in dataset.src_dict.items()}
     tgt_dict = {v: k for k, v in dataset.tgt_dict.items()}
@@ -56,7 +56,7 @@ def eval(model, dataset, bsz=1, verbose=False, log_target_probs=False):
             if len(tgt.shape) == 0:
                 tgt = tgt.unsqueeze(dim=0)
             # Safe to add tgt since we are not teacher forcing
-            output = model(src, tgt)
+            output = model(src, tgt, use_oracle=use_oracle)
             correct_seq = True
             predicted = []
             probs = []
@@ -76,7 +76,7 @@ def eval(model, dataset, bsz=1, verbose=False, log_target_probs=False):
                         correct_seq = False
             
             tgt_probs = [] 
-            if not correct_seq:# and log_target_probs:
+            if not correct_seq and log_target_probs:
                 # Teacher force to get probability of target
                 tgt_output = model(src, tgt, teacher_forcing=True)
                 for out_idx, out in enumerate(tgt_output):
@@ -132,7 +132,7 @@ def train(model, train_dataset, eval_dataset, name, lr=0.001, log_interval=1000,
                 tgt = tgt.unsqueeze(dim=0)
 
             use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
-            output = model(src, tgt, teacher_forcing=use_teacher_forcing, use_oracle=use_oracle)
+            output = model(src, tgt, teacher_forcing=use_teacher_forcing)
 
             # works for bsz 1
             pad_zeros = torch.zeros(max_length - output.shape[0], output.shape[-1]).to(device)
@@ -159,7 +159,12 @@ def train(model, train_dataset, eval_dataset, name, lr=0.001, log_interval=1000,
                 eval_acc = 100 * sum(eval_data) / len(eval_data)
                 accs.append(eval_acc)
                 max_acc = max(accs)
-                print(f"Step {step} - Eval_acc: {eval_acc:.02f} % over {len(eval_data)} data points (max {max_acc}).")
+                oracle_string = ""
+                if use_oracle:
+                    oracle_data, oracle_stats = eval(model, eval_dataset, use_oracle=use_oracle)
+                    oracle_acc = 100 * sum(oracle_data) / len(oracle_data)
+                    oracle_string = f"(Oracle acc. {oracle_acc:.02f} %) "
+                print(f"Step {step} - Eval_acc: {eval_acc:.02f} % {oracle_string}over {len(eval_data)} data points (max {max_acc}).")
             if step >= steps:
                 break
         if step >= steps:
@@ -176,9 +181,11 @@ def train(model, train_dataset, eval_dataset, name, lr=0.001, log_interval=1000,
         breakpoint()
 
     print(f"{json_stats}")
-
-    print(f"Step {step} - Eval_acc: {eval_acc:.02f} % over {len(eval_data)} data points (max {max_acc}).")
-    
+    if use_oracle:
+        oracle_data, oracle_stats = eval(model, eval_dataset, use_oracle=use_oracle)
+        oracle_acc = 100 * sum(oracle_data) / len(oracle_data)
+        oracle_string = f"(Oracle acc. {oracle_acc:.02f} %) "
+    print(f"Step {step} - Eval_acc: {eval_acc:.02f} % {oracle_string}over {len(eval_data)} data points (max {max_acc}).")
 
 
 if __name__ == "__main__":

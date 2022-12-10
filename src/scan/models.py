@@ -227,14 +227,29 @@ class RNN(nn.Module):
             )
             
             decoder_outputs.append(decoder_output)
+            
             if teacher_forcing:
                 decoder_input = target[idx]  # Teacher forcing
             else:
-               _topv, topi = decoder_output.topk(1)
-               decoder_input = topi.squeeze().clone().detach()  # detach from history as input
-            
+                _topv, topi = decoder_output.topk(1)
+                decoder_input = topi.squeeze().clone().detach()  # detach from history as input
+
+             
+
             if decoder_input.item() == self.decoder.dictionary[self.EOS]:
-               break
+                if not use_oracle:
+                    break
+                if idx == len(target) - 1:
+                    break
+
+                # We force something else than EOS when using oracle
+                _topv, topi = decoder_output.topk(2)
+                decoder_input = topi.squeeze()[1].clone().detach()  # detach from history as input
+                decoder_outputs[-1][0][0][self.decoder.dictionary[self.EOS]] += -100
+
+        if use_oracle:
+            # Make last output EOS
+            decoder_outputs[-1][0][0][self.decoder.dictionary[self.EOS]] += 100
 
         return torch.stack(decoder_outputs) 
 
