@@ -92,7 +92,7 @@ class Decoder(nn.Module):
         if use_attention:
             self.attention = Attention(hidden_size=hidden_size)
             self.hidden_layers = layer_type(
-                2*hidden_size, hidden_size, num_layers=num_layers, dropout=dropout) 
+                2 * hidden_size, hidden_size, num_layers=num_layers, dropout=dropout) 
             self.out = nn.Linear(2 * hidden_size, len(dictionary))
         else:
             self.hidden_layers = layer_type(
@@ -118,24 +118,19 @@ class Decoder(nn.Module):
                 attn_weights.unsqueeze(dim=0),
                 encoder_hiddens,
             )
-            if self.use_concat_hidden:
-                ctxt_cat = torch.cat((context, hidden), dim=-1)
-                output = nn.functional.relu(ctxt_cat)
-                output, hidden = self.hidden_layers(embedded, output)
-            else:
-                ctxt_cat = torch.cat((embedded.squeeze(), context.squeeze()), dim=-1)
-                ctxt_cat = ctxt_cat.view(1,1,-1)
-                output = nn.functional.relu(ctxt_cat)
-                output, hidden = self.hidden_layers(output, hidden)
             
+            ctxt_cat = torch.cat((embedded.squeeze(), context.squeeze()), dim=-1)
+            output = ctxt_cat.view(1,1,-1)
+            output = nn.functional.relu(output)
+            output, hidden = self.hidden_layers(output, hidden)
+        
             # The supplement is quite explicit that the context vector
-            # is passed as input to the decoder RNN, but the attention
-            # could also be applied afterwards.
-            # We project the context to the hidden size.
+            # is passed as input to the decoder RNN.
     
             # "Last the hidden state is concatenated with c_i and mapped
             # to a softmax", so we reuse the context vecor here but
             # with the updaten hidden state.
+            # new_ctxt_hidden = torch.cat((context.view(1,1,-1), hidden), dim=-1)
             new_ctxt_hidden = torch.cat((context.view(1,1,-1), hidden), dim=-1)
             output = self.out(new_ctxt_hidden)
         else:

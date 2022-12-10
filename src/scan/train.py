@@ -68,8 +68,8 @@ def eval(model, dataset, bsz=1, verbose=False):
                     target = tgt[out_idx]
                     prob = torch.nn.functional.log_softmax(out, dim=-1).squeeze()
                     pred = prob.argmax()
-                    probs.append(prob[pred])
-                    tgt_probs.append(prob[target])
+                    probs.append(prob[pred].item())
+                    tgt_probs.append(prob[target].item())
                     predicted.append(pred)
                     if target != pred:
                         # Whole sequence needs to be correct
@@ -96,6 +96,7 @@ def eval(model, dataset, bsz=1, verbose=False):
     assert len(accuracy) == len(dataset)
     accuracy_stats["command_length"] = acc_process(accuracy_stats["command_length"])
     accuracy_stats["action_length"] = acc_process(accuracy_stats["action_length"])
+    accuracy_stats["accuracy"] = accuracy
     return accuracy, accuracy_stats
 
 
