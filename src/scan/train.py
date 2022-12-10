@@ -2,6 +2,8 @@ import argparse
 import random
 import os
 
+from collections import defaultdict
+
 import tqdm
 
 import torch
@@ -20,11 +22,25 @@ MODEL_MAP = {
 }
 
 
+def acc_process(acc_dict):
+    stats = {}
+    for k, v in acc_dict.items():
+        acc = sum(v) / len(v)
+        stats[k] = acc
+    return stats
+
+
 def eval(model, dataset, bsz=1, verbose=False):
 
     src_dict = {v: k for k, v in dataset.src_dict.items()}
     tgt_dict = {v: k for k, v in dataset.tgt_dict.items()}
 
+    accuracy_stats = {
+        "command_length": defaultdict(list),
+        "action_length": defaultdict(list),
+        "pred_probs": [],
+        "tgt_probs": []
+    }
     accuracy = []
     data_loader = DataLoader(dataset, batch_size=bsz)
     with torch.no_grad():
@@ -43,18 +59,23 @@ def eval(model, dataset, bsz=1, verbose=False):
             correct_seq = True
             predicted = []
             probs = []
+            tgt_probs = []
             if len(tgt) != len(output):
                 correct_seq = False
             else:
                 for out_idx, out in enumerate(output):
                     target = tgt[out_idx]
                     prob = torch.nn.functional.log_softmax(out, dim=-1).squeeze()
-                    probs.append(prob)
                     pred = prob.argmax()
+                    probs.append(prob[pred])
+                    tgt_probs.append(prob[target])
                     predicted.append(pred)
                     if target != pred:
                         # Whole sequence needs to be correct
                         correct_seq = False
+             
+            accuracy_stats["pred_probs"].append(sum(probs))
+            accuracy_stats["tgt_probs"].append(sum(tgt_probs))
 
             decoded_src = " ".join([src_dict[t.item()] for t in src])
             decoded_tgt = " ".join([tgt_dict[t.item()] for t in tgt])
@@ -63,12 +84,18 @@ def eval(model, dataset, bsz=1, verbose=False):
                 assert (decoded_tgt == decoded_pred) == correct_seq
             except:
                 breakpoint()
+
+            # neg 1 since eos
+            accuracy_stats["action_length"][len(tgt) - 1].append(correct_seq)
+            accuracy_stats["command_length"][len(src) - 1].append(correct_seq)
             if verbose:             
                 print(f"src: {decoded_src}, tgt: {decoded_tgt}, pred: {decoded_pred}")
 
             accuracy.append(correct_seq)
     assert len(accuracy) == len(dataset)
-    return accuracy  
+    accuracy_stats["command_length"] = acc_process(accuracy_stats["command_length"])
+    accuracy_stats["action_length"] = acc_process(accuracy_stats["action_length"])
+    return accuracy, accuracy_stats
 
 
 max_length = 64
@@ -113,7 +140,7 @@ def train(model, train_dataset, eval_dataset, name, lr=0.001, eval_interval=1000
             
             if not step % eval_interval:
                 print(f"Step {step} - running eval...")
-                eval_data = eval(model, eval_dataset)
+                eval_data, eval_stats = eval(model, eval_dataset)
                 eval_acc = 100 * sum(eval_data) / len(eval_data)
                 accs.append(eval_acc)
                 max_acc = max(accs)
@@ -124,11 +151,16 @@ def train(model, train_dataset, eval_dataset, name, lr=0.001, eval_interval=1000
                 break
     torch.save(model, name)
     print(f"Finished - running eval...")
-    eval_data = eval(model, eval_dataset)
+    eval_data, eval_stats = eval(model, eval_dataset)
     eval_acc = 100 * sum(eval_data) / len(eval_data)
     accs.append(eval_acc)
     max_acc = max(accs)
+    json_stats = json.dumps(eval_stats)
+
+    print(f"{json_stats}")
+
     print(f"Step {step} - Eval_acc: {eval_acc:.02f} % over {len(eval_data)} data points (max {max_acc}).")
+    
 
 
 if __name__ == "__main__":

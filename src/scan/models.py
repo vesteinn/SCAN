@@ -49,7 +49,8 @@ class Attention(nn.Module):
         # and U_{\alpha}.
         self.w = nn.Linear(hidden_size*2, hidden_size)
         # Learned weight of alignments
-        self.v = nn.Parameter(torch.tensor(hidden_size, dtype=float))
+        self.v = nn.Parameter(torch.zeros((1, hidden_size), dtype=torch.float))
+        #self.v = nn.Linear(hidden_size, 1, bias=False)
 
     def forward(self, hidden, encoder_hiddens):
         # hidden: [num_layers, bsz, hidden_size]
@@ -59,15 +60,33 @@ class Attention(nn.Module):
         # one of the encoder hidden states!
         # hidden_for_cat: [max_length, hidden_size]
         hidden_for_cat = hidden.squeeze().repeat(num_outputs, 1)
-        # cat: [max_length, 2 * hidden_size]
-        cat = torch.cat((hidden_for_cat, encoder_hiddens), dim=-1)
         # alignment / energy
         # the energy used in the first class slides,
         # and in JLTAAT is the concat variant
-        # alignment: [max_length, hidden_size]
-        alignment = self.v * self.w(cat).tanh()
+        # alignment: [max_length, hidden_siz]
+        
+        # silly loop
+        #alignments = []
+        #for i in range(encoder_hiddens.shape[0]):
+        #    # cat: [max_length, 2 * hidden_size]
+        #    cat = torch.cat((hidden.squeeze(), encoder_hiddens[i]), dim=-1)
+        #    w = self.w(cat).tanh().T
+        #    alignment = torch.dot(self.v.squeeze(), w.squeeze())
+        #    alignments.append(alignment)
+        #alignments = torch.stack(alignments)
+
+        try:
+            h_cat = torch.cat((hidden_for_cat, encoder_hiddens), dim=-1)
+            mmal = torch.mm(self.v, self.w(h_cat).tanh().T).squeeze()
+            #assert torch.isclose(alignments, mmal,rtol=1e-04, atol=1e-07).all().item()
+        except:
+            breakpoint()
+
+        #torch.mm(self.v, self.w(cat).tanh().T)
+        #alignment = self.v * self.w(cat).tanh()
         # weights: [max_length, hidden_size]
-        weights = F.softmax(alignment, dim=-1)
+        #weights = F.softmax(alignments, dim=-1)
+        weights = F.softmax(mmal, dim=-1)
         return weights
 
 
@@ -89,17 +108,22 @@ class Decoder(nn.Module):
         if use_attention:
             self.attention = Attention(hidden_size=hidden_size)
             # To project the concatenated vector to the hidden_size
-            self.w1 = nn.Linear(2 * hidden_size, hidden_size)
+            #self.w1 = nn.Linear(2 * hidden_size, hidden_size)
             # We can use w1 in both cases when using the same concat?
             # Initial experiments show this gave better results (unclear why),
             # but using w2 makes more sense.
-            self.w2 = nn.Linear(2 * hidden_size, hidden_size)
-
-        self.hidden_layers = layer_type(
-            hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
+            #self.w2 = nn.Linear(2 * hidden_size, hidden_size)
+            
+            self.hidden_layers = layer_type(
+                2*hidden_size, hidden_size, num_layers=num_layers, dropout=dropout) 
+            self.out = nn.Linear(2 * hidden_size, len(dictionary))
+        else:
+        
+            self.out = nn.Linear(hidden_size, len(dictionary))
+            self.hidden_layers = layer_type(
+                hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
         # Since the last layer does not get dropout applied using the above
         self.dropout = nn.Dropout(p=dropout)
-        self.out = nn.Linear(hidden_size, len(dictionary))
         # Should we use logsoftmax, let's work with raw logits
         #self.softmax = nn.LogSoftmax(dim=-1)
 
@@ -120,16 +144,21 @@ class Decoder(nn.Module):
             # TODO: consider bmm and mT for batches
             # context: [num_hidden, num_hidden]
             context = torch.mm(
-                encoder_hiddens.T,
-                attn_weights
-            ).sum(dim=-1).view(1, 1, -1)
+                attn_weights.unsqueeze(dim=0),
+                encoder_hiddens,
+            )#.sum(dim=-1).view(1, 1, -1) # ORDER? ?? ? ?
             # ctxt_hidden: [1, 1, hidden_size * 2]
             if self.use_concat_hidden:
                 ctxt_cat = torch.cat((context, hidden), dim=-1)
-                output, hidden = self.hidden_layers(embedded, self.w1(ctxt_cat))
+                output = nn.functional.relu(ctxt_cat)
+                output, hidden = self.hidden_layers(embedded, output)
             else:
-                ctxt_cat = torch.cat((context, embedded), dim=-1)
-                output, hidden = self.hidden_layers(self.w1(ctxt_cat), hidden)
+                #ctxt_cat = torch.cat((context, embedded), dim=-1)
+                ctxt_cat = torch.cat((embedded.squeeze(), context.squeeze()), dim=-1)
+                ctxt_cat = ctxt_cat.view(1,1,-1)
+                #output, hidden = self.hidden_layers(self.w1(ctxt_cat), hidden)
+                output = nn.functional.relu(ctxt_cat)
+                output, hidden = self.hidden_layers(output, hidden)
             # The supplement is quite explicit that the context vector
             # is passed as input to the decoder RNN, but the attention
             # could also be applied afterwards.
@@ -139,13 +168,14 @@ class Decoder(nn.Module):
             # "Last the hidden state is concatenated with c_i and mapped
             # to a softmax", so we reuse the context vecor here but
             # with the updaten hidden state.
-            new_ctxt_hidden = self.w2(torch.cat((context, hidden), dim=-1))
+            new_ctxt_hidden = torch.cat((context.view(1,1,-1), hidden), dim=-1)
             #output = self.softmax(self.out(new_ctxt_hidden))
+            
             output = self.out(new_ctxt_hidden)
         else:
             output, hidden = self.hidden_layers(embedded, hidden)
-            #output = self.softmax(self.out(output[0]))
             output = self.out(output[0])
+        #self.dropout(output)
         return output, hidden, attn_weights
 
 
@@ -189,7 +219,8 @@ class RNN(nn.Module):
         # TODO: why is it like this? cell states?
         if self.num_layers > 1:
             return self.num_layers * [torch.zeros(self.num_layers, 1, self.encoder.hidden_size, device=self.device(), requires_grad=True)]
-        return torch.zeros(self.num_layers, 1, self.encoder.hidden_size, device=self.device(), requires_grad=True)
+        init_weights = torch.zeros(self.num_layers, 1, self.encoder.hidden_size, device=self.device(), requires_grad=True)
+        return init_weights
 
     def forward(self, input, target, teacher_forcing=False, use_oracle=False):
         input_length = input.shape[0]
@@ -205,6 +236,7 @@ class RNN(nn.Module):
             self.encoder.hidden_size,
             device=self.device()
         )
+
         encoder_hidden = self.init_hidden()
         for idx in range(input_length):
             # Note: No need to loop with torch LSTM, but needed fro GRU?
@@ -222,7 +254,6 @@ class RNN(nn.Module):
             # -1 for the last layer!
             encoder_hiddens[idx] = enc_hidden[-1]
 
-        # TODO: check that BOS is not already on data using teacher forcing
         decoder_input = torch.tensor(
             self.decoder.dictionary[self.BOS],
             device=self.device()
@@ -246,7 +277,6 @@ class RNN(nn.Module):
             if decoder_input.item() == self.decoder.dictionary[self.EOS]:
                break
 
-        # Remove BOS
         return torch.stack(decoder_outputs) 
 
 
