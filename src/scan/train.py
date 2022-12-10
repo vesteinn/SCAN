@@ -196,7 +196,6 @@ if __name__ == "__main__":
     parser.add_argument("--valid", type=str)
     parser.add_argument("--name", type=str, default="last_model.pt")
     parser.add_argument("--device", type=str, default="cpu")
-    parser.add_argument("--model_type", type=str, default="lstm")
     parser.add_argument("--bsz", type=int, default=1)
     parser.add_argument("--steps", type=int, default=100000)
     parser.add_argument("--eval_interval", type=int, default=1000)
