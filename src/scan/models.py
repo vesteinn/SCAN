@@ -109,10 +109,6 @@ class Decoder(nn.Module):
             self.attention = Attention(hidden_size=hidden_size)
             # To project the concatenated vector to the hidden_size
             #self.w1 = nn.Linear(2 * hidden_size, hidden_size)
-            # We can use w1 in both cases when using the same concat?
-            # Initial experiments show this gave better results (unclear why),
-            # but using w2 makes more sense.
-            #self.w2 = nn.Linear(2 * hidden_size, hidden_size)
             
             self.hidden_layers = layer_type(
                 2*hidden_size, hidden_size, num_layers=num_layers, dropout=dropout) 
@@ -122,7 +118,6 @@ class Decoder(nn.Module):
             self.out = nn.Linear(hidden_size, len(dictionary))
             self.hidden_layers = layer_type(
                 hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
-        # Since the last layer does not get dropout applied using the above
         self.dropout = nn.Dropout(p=dropout)
         # Should we use logsoftmax, let's work with raw logits
         #self.softmax = nn.LogSoftmax(dim=-1)
@@ -174,7 +169,8 @@ class Decoder(nn.Module):
             output = self.out(new_ctxt_hidden)
         else:
             output, hidden = self.hidden_layers(embedded, hidden)
-            output = self.out(output[0])
+            output = torch.nn.functional.relu(output[0])
+            output = self.out(output)
         #self.dropout(output)
         return output, hidden, attn_weights
 

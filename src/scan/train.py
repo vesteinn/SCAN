@@ -1,6 +1,7 @@
 import argparse
-import random
+import json
 import os
+import random
 
 from collections import defaultdict
 
@@ -122,9 +123,10 @@ def train(model, train_dataset, eval_dataset, name, lr=0.001, eval_interval=1000
 
             # works for bsz 1
             pad_zeros = torch.zeros(max_length - output.shape[0], output.shape[-1]).to(device)
+            torch.fill(pad_zeros, -100)
             output_pad = torch.cat((output.reshape(-1, output.shape[-1]), pad_zeros), dim=0)
             
-            tgt_pad = torch.nn.functional.pad(tgt, (0, max_length - len(tgt)))
+            tgt_pad = torch.nn.functional.pad(tgt, (0, max_length - len(tgt)), value=-100)
             loss = torch.nn.functional.cross_entropy(output_pad, tgt_pad)
             loss.backward()
 
