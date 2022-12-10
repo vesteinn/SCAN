@@ -160,10 +160,11 @@ def train(model, train_dataset, eval_dataset, name, lr=0.001, log_interval=1000,
                 accs.append(eval_acc)
                 max_acc = max(accs)
                 oracle_string = ""
-                if use_oracle:
-                    oracle_data, oracle_stats = eval(model, eval_dataset, use_oracle=use_oracle)
-                    oracle_acc = 100 * sum(oracle_data) / len(oracle_data)
-                    oracle_string = f"(Oracle acc. {oracle_acc:.02f} %) "
+                #For debugging - too much to run all the time.. 
+                #if use_oracle:
+                #    oracle_data, oracle_stats = eval(model, eval_dataset, use_oracle=use_oracle)
+                #    oracle_acc = 100 * sum(oracle_data) / len(oracle_data)
+                #    oracle_string = f"(Oracle acc. {oracle_acc:.02f} %) "
                 print(f"Step {step} - Eval_acc: {eval_acc:.02f} % {oracle_string}over {len(eval_data)} data points (max {max_acc}).")
             if step >= steps:
                 break
