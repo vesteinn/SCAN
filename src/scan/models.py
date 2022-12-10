@@ -48,44 +48,27 @@ class Attention(nn.Module):
         # Twice hidden_size to encompass both W_{\alpha}
         # and U_{\alpha}.
         self.w = nn.Linear(hidden_size*2, hidden_size)
+        
         # Learned weight of alignments
         self.v = nn.Parameter(torch.zeros((1, hidden_size), dtype=torch.float))
-        #self.v = nn.Linear(hidden_size, 1, bias=False)
 
     def forward(self, hidden, encoder_hiddens):
         # hidden: [num_layers, bsz, hidden_size]
         # encoder_outputs: [max_length, hidden_size]
         num_outputs = encoder_hiddens.shape[0]
+        
         # repeat so we have concatenation for every
         # one of the encoder hidden states!
         # hidden_for_cat: [max_length, hidden_size]
         hidden_for_cat = hidden.squeeze().repeat(num_outputs, 1)
+        
         # alignment / energy
         # the energy used in the first class slides,
         # and in JLTAAT is the concat variant
         # alignment: [max_length, hidden_siz]
         
-        # silly loop
-        #alignments = []
-        #for i in range(encoder_hiddens.shape[0]):
-        #    # cat: [max_length, 2 * hidden_size]
-        #    cat = torch.cat((hidden.squeeze(), encoder_hiddens[i]), dim=-1)
-        #    w = self.w(cat).tanh().T
-        #    alignment = torch.dot(self.v.squeeze(), w.squeeze())
-        #    alignments.append(alignment)
-        #alignments = torch.stack(alignments)
-
-        try:
-            h_cat = torch.cat((hidden_for_cat, encoder_hiddens), dim=-1)
-            mmal = torch.mm(self.v, self.w(h_cat).tanh().T).squeeze()
-            #assert torch.isclose(alignments, mmal,rtol=1e-04, atol=1e-07).all().item()
-        except:
-            breakpoint()
-
-        #torch.mm(self.v, self.w(cat).tanh().T)
-        #alignment = self.v * self.w(cat).tanh()
-        # weights: [max_length, hidden_size]
-        #weights = F.softmax(alignments, dim=-1)
+        h_cat = torch.cat((hidden_for_cat, encoder_hiddens), dim=-1)
+        mmal = torch.mm(self.v, self.w(h_cat).tanh().T).squeeze()
         weights = F.softmax(mmal, dim=-1)
         return weights
 
@@ -103,24 +86,18 @@ class Decoder(nn.Module):
         self.use_concat_hidden = use_concat_hidden
 
         self.embedding = nn.Embedding(len(dictionary), hidden_size)
+        self.dropout = nn.Dropout(p=dropout)
         
         layer_type = self._get_hidden_type()
         if use_attention:
             self.attention = Attention(hidden_size=hidden_size)
-            # To project the concatenated vector to the hidden_size
-            #self.w1 = nn.Linear(2 * hidden_size, hidden_size)
-            
             self.hidden_layers = layer_type(
                 2*hidden_size, hidden_size, num_layers=num_layers, dropout=dropout) 
             self.out = nn.Linear(2 * hidden_size, len(dictionary))
         else:
-        
-            self.out = nn.Linear(hidden_size, len(dictionary))
             self.hidden_layers = layer_type(
                 hidden_size, hidden_size, num_layers=num_layers, dropout=dropout)
-        self.dropout = nn.Dropout(p=dropout)
-        # Should we use logsoftmax, let's work with raw logits
-        #self.softmax = nn.LogSoftmax(dim=-1)
+            self.out = nn.Linear(hidden_size, len(dictionary))
 
     def forward(self, input, hidden, encoder_hiddens):
         # hidden: [num_layers, bsz, hidden_size]
@@ -136,42 +113,35 @@ class Decoder(nn.Module):
             # is fed to the attention layer
             # context: [max_length, hidden_size]
             attn_weights = self.attention(hidden, encoder_hiddens)
-            # TODO: consider bmm and mT for batches
             # context: [num_hidden, num_hidden]
             context = torch.mm(
                 attn_weights.unsqueeze(dim=0),
                 encoder_hiddens,
-            )#.sum(dim=-1).view(1, 1, -1) # ORDER? ?? ? ?
-            # ctxt_hidden: [1, 1, hidden_size * 2]
+            )
             if self.use_concat_hidden:
                 ctxt_cat = torch.cat((context, hidden), dim=-1)
                 output = nn.functional.relu(ctxt_cat)
                 output, hidden = self.hidden_layers(embedded, output)
             else:
-                #ctxt_cat = torch.cat((context, embedded), dim=-1)
                 ctxt_cat = torch.cat((embedded.squeeze(), context.squeeze()), dim=-1)
                 ctxt_cat = ctxt_cat.view(1,1,-1)
-                #output, hidden = self.hidden_layers(self.w1(ctxt_cat), hidden)
                 output = nn.functional.relu(ctxt_cat)
                 output, hidden = self.hidden_layers(output, hidden)
+            
             # The supplement is quite explicit that the context vector
             # is passed as input to the decoder RNN, but the attention
             # could also be applied afterwards.
             # We project the context to the hidden size.
-            # output, hidden = self.hidden_layers(embedded, self.w(ctxt_hidden))
     
             # "Last the hidden state is concatenated with c_i and mapped
             # to a softmax", so we reuse the context vecor here but
             # with the updaten hidden state.
             new_ctxt_hidden = torch.cat((context.view(1,1,-1), hidden), dim=-1)
-            #output = self.softmax(self.out(new_ctxt_hidden))
-            
             output = self.out(new_ctxt_hidden)
         else:
             output, hidden = self.hidden_layers(embedded, hidden)
             output = torch.nn.functional.relu(output[0])
             output = self.out(output)
-        #self.dropout(output)
         return output, hidden, attn_weights
 
 
@@ -211,9 +181,8 @@ class RNN(nn.Module):
         return next(self.encoder.parameters()).device
 
     def init_hidden(self):
-        # TODO: make it work for bszs
-        # TODO: why is it like this? cell states?
         if self.num_layers > 1:
+            # LSTM
             return self.num_layers * [torch.zeros(self.num_layers, 1, self.encoder.hidden_size, device=self.device(), requires_grad=True)]
         init_weights = torch.zeros(self.num_layers, 1, self.encoder.hidden_size, device=self.device(), requires_grad=True)
         return init_weights

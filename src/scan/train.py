@@ -157,7 +157,10 @@ def train(model, train_dataset, eval_dataset, name, lr=0.001, eval_interval=1000
     eval_acc = 100 * sum(eval_data) / len(eval_data)
     accs.append(eval_acc)
     max_acc = max(accs)
-    json_stats = json.dumps(eval_stats)
+    try:
+        json_stats = json.dumps(eval_stats)
+    except:
+        breakpoint()
 
     print(f"{json_stats}")
 
