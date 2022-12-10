@@ -121,7 +121,7 @@ class Decoder(nn.Module):
             
             ctxt_cat = torch.cat((embedded.squeeze(), context.squeeze()), dim=-1)
             output = ctxt_cat.view(1,1,-1)
-            output = nn.functional.relu(output)
+            output = output.tanh()
             output, hidden = self.hidden_layers(output, hidden)
         
             # The supplement is quite explicit that the context vector
@@ -135,7 +135,7 @@ class Decoder(nn.Module):
             output = self.out(new_ctxt_hidden)
         else:
             output, hidden = self.hidden_layers(embedded, hidden)
-            output = torch.nn.functional.relu(output[0])
+            output = output.tanh()
             output = self.out(output)
         return output, hidden, attn_weights
 
