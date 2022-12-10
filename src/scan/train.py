@@ -31,7 +31,7 @@ def acc_process(acc_dict):
     return stats
 
 
-def eval(model, dataset, bsz=1, verbose=False):
+def eval(model, dataset, bsz=1, verbose=False, log_target_probs=False):
 
     src_dict = {v: k for k, v in dataset.src_dict.items()}
     tgt_dict = {v: k for k, v in dataset.tgt_dict.items()}
@@ -40,7 +40,7 @@ def eval(model, dataset, bsz=1, verbose=False):
         "command_length": defaultdict(list),
         "action_length": defaultdict(list),
         "pred_probs": [],
-        "tgt_probs": []
+        "tgt_probs": [],
     }
     accuracy = []
     data_loader = DataLoader(dataset, batch_size=bsz)
@@ -60,23 +60,35 @@ def eval(model, dataset, bsz=1, verbose=False):
             correct_seq = True
             predicted = []
             probs = []
-            tgt_probs = []
             if len(tgt) != len(output):
                 correct_seq = False
-            else:
-                for out_idx, out in enumerate(output):
+            
+            for out_idx, out in enumerate(output):
+                prob = torch.nn.functional.log_softmax(out, dim=-1).squeeze()
+                pred = prob.argmax()
+                probs.append(prob[pred].item())
+                predicted.append(pred)
+                
+                if len(tgt) == len(output):
                     target = tgt[out_idx]
-                    prob = torch.nn.functional.log_softmax(out, dim=-1).squeeze()
-                    pred = prob.argmax()
-                    probs.append(prob[pred].item())
-                    tgt_probs.append(prob[target].item())
-                    predicted.append(pred)
                     if target != pred:
                         # Whole sequence needs to be correct
                         correct_seq = False
-             
+            
+            tgt_probs = [] 
+            if not correct_seq:# and log_target_probs:
+                # Teacher force to get probability of target
+                tgt_output = model(src, tgt, teacher_forcing=True)
+                for out_idx, out in enumerate(tgt_output):
+                    prob = torch.nn.functional.log_softmax(out, dim=-1).squeeze()
+                    tgt_prob = prob[tgt[out_idx]]
+                    tgt_probs.append(tgt_prob.item())
+            else:
+                tgt_probs = None
             accuracy_stats["pred_probs"].append(sum(probs))
-            accuracy_stats["tgt_probs"].append(sum(tgt_probs))
+            if tgt_probs is not None:
+                tgt_probs = sum(tgt_probs)
+            accuracy_stats["tgt_probs"].append(tgt_probs)
 
             decoded_src = " ".join([src_dict[t.item()] for t in src])
             decoded_tgt = " ".join([tgt_dict[t.item()] for t in tgt])
@@ -101,7 +113,7 @@ def eval(model, dataset, bsz=1, verbose=False):
 
 
 max_length = 64
-def train(model, train_dataset, eval_dataset, name, lr=0.001, eval_interval=1000, bsz=1, steps=100000, teacher_forcing_ratio=0.5, use_oracle=False, device="cpu"):
+def train(model, train_dataset, eval_dataset, name, lr=0.001, log_interval=1000, eval_interval=1000, bsz=1, steps=100000, teacher_forcing_ratio=0.5, use_oracle=False, device="cpu", log_target_probs=False):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     data_loader = DataLoader(train_dataset, batch_size=bsz, shuffle=True)
     step = 0
@@ -132,8 +144,8 @@ def train(model, train_dataset, eval_dataset, name, lr=0.001, eval_interval=1000
             loss.backward()
 
             loss_sum += loss
-            if not step % 1000:
-                print(f"Step {step} - training loss: {loss_sum / 1000}")
+            if not step % log_interval:
+                print(f"Step {step} - training loss: {loss_sum / log_interval}")
                 loss_sum = 0
 
             step += 1
@@ -154,7 +166,7 @@ def train(model, train_dataset, eval_dataset, name, lr=0.001, eval_interval=1000
                 break
     torch.save(model, name)
     print(f"Finished - running eval...")
-    eval_data, eval_stats = eval(model, eval_dataset)
+    eval_data, eval_stats = eval(model, eval_dataset, log_target_probs=log_target_probs)
     eval_acc = 100 * sum(eval_data) / len(eval_data)
     accs.append(eval_acc)
     max_acc = max(accs)
@@ -176,6 +188,7 @@ if __name__ == "__main__":
     parser.add_argument("--valid", type=str)
     parser.add_argument("--name", type=str, default="last_model.pt")
     parser.add_argument("--device", type=str, default="cpu")
+    parser.add_argument("--model_type", type=str, default="lstm")
     parser.add_argument("--bsz", type=int, default=1)
     parser.add_argument("--steps", type=int, default=100000)
     parser.add_argument("--eval_interval", type=int, default=1000)
@@ -188,6 +201,7 @@ if __name__ == "__main__":
     parser.add_argument("--use_oracle", action='store_true', default=False)
     parser.add_argument("--use_concat_hidden", action='store_true', default=False)
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
+    parser.add_argument("--log_target_probs", action='store_true', default=False)
     parser.add_argument("--seed", type=int, default=None)
 
     args = parser.parse_args()
@@ -230,7 +244,8 @@ if __name__ == "__main__":
         teacher_forcing_ratio=args.teacher_forcing_ratio,
         eval_interval=args.eval_interval,
         use_oracle=args.use_oracle,
-        device=args.device)
+        device=args.device,
+        log_target_probs=args.log_target_probs)
     
 
 

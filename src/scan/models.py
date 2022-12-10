@@ -199,7 +199,6 @@ class RNN(nn.Module):
 
         encoder_hidden = self.init_hidden()
         for idx in range(input_length):
-            # Note: No need to loop with torch LSTM, but needed fro GRU?
             _enc_output, encoder_hidden = self.encoder(
                 input[idx],
                 encoder_hidden
