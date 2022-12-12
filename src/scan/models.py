@@ -142,7 +142,7 @@ class Decoder(nn.Module):
                 output = torch.cat((context.view(1, 1, -1), hidden[0]), dim=-1)
             else:
                 output = torch.cat((context.view(1, 1, -1), hidden), dim=-1)
-            output = self.attn_combine2(ouput)
+            output = self.attn_combine2(output)
             output = output.relu()
             output = self.out(output)
         else:
