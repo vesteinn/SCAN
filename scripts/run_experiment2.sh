@@ -12,7 +12,7 @@ for i in {0..4}; do
 	 --log_target_probs \
 	 --use_oracle \
          --train $train_file --valid $valid_file --model gru \
-         --layers 1 --hidden_dim 50 --eval_interval 5000 #> $log_file
+         --layers 1 --hidden_dim 50 --eval_interval 5000 > $log_file
     tail -n 1 $log_file
     echo "--"
 done
