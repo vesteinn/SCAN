@@ -18,8 +18,8 @@ class Encoder(nn.Module):
         self.embedding = nn.Embedding(input_size, hidden_size)
         layer_type = self._get_hidden_type()
         self.hidden_layers = layer_type(
-            hidden_size, hidden_size, num_layers=num_layers,
-            dropout=dropout)
+            hidden_size, hidden_size, num_layers=num_layers, dropout=dropout
+        )
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, input, hidden):
@@ -44,7 +44,6 @@ class Attention(nn.Module):
         self.w = nn.Linear(hidden_size * 2, hidden_size)
 
         # Learned weight of alignments
-        #self.v = nn.Parameter(torch.normal(torch.zeros((1, hidden_size), dtype=torch.float)))
         self.v = nn.Linear(hidden_size, 1, bias=False)
 
     def forward(self, hidden, encoder_hiddens):
@@ -120,7 +119,7 @@ class Decoder(nn.Module):
                 attn_weights = self.attention(hidden[0], encoder_hiddens)
             else:
                 attn_weights = self.attention(hidden, encoder_hiddens)
-            # context: [num_hidden, num_hidden]
+            
             context = torch.mm(
                 attn_weights.unsqueeze(dim=0),
                 encoder_hiddens,
@@ -132,10 +131,9 @@ class Decoder(nn.Module):
 
             # The supplement is quite explicit that the context vector
             # is passed as input to the decoder RNN.
-
             # "Last the hidden state is concatenated with c_i and mapped
-            # to a softmax", so we reuse the context vecor here but
-            # with the updaten hidden state.
+            # to a softmax"
+
             if self.model_type == "lstm":
                 new_ctxt_hidden = torch.cat((context.view(1, 1, -1), hidden[0]), dim=-1)
             else:
@@ -190,7 +188,6 @@ class RNN(nn.Module):
         )
 
     def device(self):
-        # TODO: consider optimizing
         return next(self.encoder.parameters()).device
 
     def init_hidden(self):
@@ -225,7 +222,7 @@ class RNN(nn.Module):
         encoder_hiddens = torch.zeros(
             self.max_length, self.encoder.hidden_size, device=self.device()
         )
-        
+
         encoder_hidden = self.init_hidden()
         for idx in range(input_length):
             _enc_output, encoder_hidden = self.encoder(input[idx], encoder_hidden)
@@ -329,7 +326,7 @@ class GRUDecoder(Decoder):
 
 class GRURNN(RNN):
     model_type = "gru"
-    
+
     def _get_encoder(self):
         return GRUEncoder
 

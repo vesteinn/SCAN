@@ -36,7 +36,7 @@ def eval(
     use_oracle=False,
     verbose=False,
 ):
-
+    model.eval()
     src_dict = {v: k for k, v in dataset.src_dict.items()}
     tgt_dict = {v: k for k, v in dataset.tgt_dict.items()}
 
@@ -125,6 +125,7 @@ def eval(
     accuracy_stats["command_length"] = acc_process(accuracy_stats["command_length"])
     accuracy_stats["action_length"] = acc_process(accuracy_stats["action_length"])
     accuracy_stats["accuracy"] = accuracy
+    model.train()
     return accuracy, accuracy_stats
 
 
