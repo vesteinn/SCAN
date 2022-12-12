@@ -24,8 +24,9 @@ class Encoder(nn.Module):
 
     def forward(self, input, hidden):
         embedded = self.embedding(input).view(1, 1, -1)
-        embedded = self.dropout(embedded)
-        output, hidden = self.hidden_layers(embedded, hidden)
+        output = embedded
+        output = self.dropout(output)
+        output, hidden = self.hidden_layers(output, hidden)
         return output, hidden
 
 
@@ -92,12 +93,12 @@ class Decoder(nn.Module):
         layer_type = self._get_hidden_type()
         if use_attention:
             self.attention = Attention(hidden_size=hidden_size)
-            self.attn_combine = nn.Linear(2 * hidden_size, 2 * hidden_size)
+            # self.attn_combine = nn.Linear(2 * hidden_size, 2 * hidden_size)
             self.hidden_layers = layer_type(
                 2 * hidden_size, hidden_size, num_layers=num_layers, dropout=dropout
             )
-            self.attn_combine2 = nn.Linear(2 * hidden_size, hidden_size)
-            self.out = nn.Linear(hidden_size, len(dictionary))
+            # self.attn_combine2 = nn.Linear(2 * hidden_size, hidden_size)
+            self.out = nn.Linear(2 * hidden_size, len(dictionary))
         else:
             self.hidden_layers = layer_type(
                 hidden_size, hidden_size, num_layers=num_layers, dropout=dropout
@@ -111,6 +112,9 @@ class Decoder(nn.Module):
         # embedded: [1,1, hidden_size]
         embedded = self.embedding(input).view(1, 1, -1)
         embedded = self.dropout(embedded)
+        output = embedded
+
+        # todo: are we using the top hidden layer in multilayer?
 
         attn_weights = None
         if self.use_attention:
@@ -127,10 +131,12 @@ class Decoder(nn.Module):
                 attn_weights.unsqueeze(dim=0),
                 encoder_hiddens,
             )
-            ctxt_cat = torch.cat((embedded.squeeze(), context.squeeze()), dim=-1)
-            output = ctxt_cat.view(1, 1, -1)
-            output = self.attn_combine(output)
+            output = torch.cat((embedded.squeeze(), context.squeeze()), dim=-1)
+            output = output.view(1, 1, -1)
+            #output = self.attn_combine(output)
+            
             output = output.relu()
+            #output = output.tanh()
             output, hidden = self.hidden_layers(output, hidden)
 
             # The supplement is quite explicit that the context vector
@@ -142,11 +148,17 @@ class Decoder(nn.Module):
                 output = torch.cat((context.view(1, 1, -1), hidden[0]), dim=-1)
             else:
                 output = torch.cat((context.view(1, 1, -1), hidden), dim=-1)
-            output = self.attn_combine2(output)
-            output = output.relu()
+            
+            #output = self.attn_combine2(output)
+            
+            #output = output.relu()
+            output = output.tanh()
             output = self.out(output)
         else:
-            output = embedded.relu()
+            # as per pytorch rnn attention tutorial
+            output = output.relu()
+            #output = output.tanh()
+            
             output, hidden = self.hidden_layers(output, hidden)
             output = self.out(output)
         return output, hidden, attn_weights
@@ -277,6 +289,7 @@ class RNN(nn.Module):
 
         if use_oracle:
             # Make last output EOS
+
             decoder_outputs[-1][0][0][self.decoder.dictionary[self.EOS]] += 100
 
         return torch.stack(decoder_outputs)

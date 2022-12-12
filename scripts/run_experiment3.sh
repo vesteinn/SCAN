@@ -17,7 +17,7 @@ for i in {0..4}; do
 	 --verbose \
 	 --train $train_file --valid $valid_file --model gru \
 	 --name ${model_name} \
-         --layers 1 --hidden_dim 100 --eval_interval 5000 > $log_file
+         --layers 1 --hidden_dim 100 --eval_interval 105000 > $log_file
     tail -n 1 $log_file
     echo "--"
 done
@@ -36,7 +36,7 @@ for i in {0..4}; do
 	--name ${model_name} \
         --train $train_file --valid $valid_file --model lstm \
 	--log_target_probs \
-        --layers 2 --hidden_dim 100 --eval_interval 5000 > $log_file
+        --layers 2 --hidden_dim 100 --eval_interval 105000 > $log_file
     tail -n 1 $log_file
     echo "--"
 done
@@ -62,7 +62,7 @@ for i in {0..4}; do
 	 --name ${model_name} \
 	 --log_target_probs \
 	 --train $train_file --valid $valid_file --model lstm \
-         --layers 1 --hidden_dim 100 --eval_interval 5000 > $log_file
+         --layers 1 --hidden_dim 100 --eval_interval 105000 > $log_file
     tail -n 1 $log_file
     echo "--"
 done
@@ -81,7 +81,7 @@ for i in {0..4}; do
         --train $train_file --valid $valid_file --model lstm \
 	--name ${model_name} \
 	--log_target_probs \
-        --layers 2 --hidden_dim 100 --eval_interval 5000 > $log_file
+        --layers 2 --hidden_dim 100 --eval_interval 101000 > $log_file
     tail -n 1 $log_file
     echo "--"
 done

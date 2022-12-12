@@ -226,8 +226,9 @@ def train(
         json_stats = json.dumps(eval_stats)
     except:
         breakpoint()
-
+    
     print(f"{json_stats}")
+    oracle_string = ""
     if use_oracle:
         oracle_data, oracle_stats = eval(model, eval_dataset, use_oracle=use_oracle)
         oracle_acc = 100 * sum(oracle_data) / len(oracle_data)
