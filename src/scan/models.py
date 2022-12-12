@@ -146,7 +146,8 @@ class Decoder(nn.Module):
             output = output.relu()
             output = self.out(output)
         else:
-            output, hidden = self.hidden_layers(embedded, hidden)
+            output = F.relu(embedded)
+            output, hidden = self.hidden_layers(output, hidden)
             output = output.relu()
             output = self.out(output)
         return output, hidden, attn_weights
