@@ -18,15 +18,13 @@ class Encoder(nn.Module):
         self.embedding = nn.Embedding(input_size, hidden_size)
         layer_type = self._get_hidden_type()
         self.hidden_layers = layer_type(
-            hidden_size, hidden_size, num_layers=num_layers
-        )  # , dropout=dropout)
-        # Since the last layer does not get dropout applied using the above
+            hidden_size, hidden_size, num_layers=num_layers,
+            dropout=dropout)
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, input, hidden):
-        # TODO: make batched
         embedded = self.embedding(input).view(1, 1, -1)
-        self.dropout(embedded)
+        embedded = self.dropout(embedded)
         output, hidden = self.hidden_layers(embedded, hidden)
         return output, hidden
 
@@ -46,7 +44,8 @@ class Attention(nn.Module):
         self.w = nn.Linear(hidden_size * 2, hidden_size)
 
         # Learned weight of alignments
-        self.v = nn.Parameter(torch.zeros((1, hidden_size), dtype=torch.float))
+        #self.v = nn.Parameter(torch.normal(torch.zeros((1, hidden_size), dtype=torch.float)))
+        self.v = nn.Linear(hidden_size, 1, bias=False)
 
     def forward(self, hidden, encoder_hiddens):
         # hidden: [num_layers, bsz, hidden_size]
@@ -64,7 +63,7 @@ class Attention(nn.Module):
         # alignment: [max_length, hidden_siz]
 
         h_cat = torch.cat((hidden_for_cat, encoder_hiddens), dim=-1)
-        mmal = torch.mm(self.v, self.w(h_cat).tanh().T).squeeze()
+        mmal = self.v(self.w(h_cat).tanh()).squeeze()
         weights = F.softmax(mmal, dim=-1)
         return weights
 
@@ -80,7 +79,6 @@ class Decoder(nn.Module):
         dropout,
         dictionary,
         use_attention=False,
-        use_concat_hidden=True,
         max_length=64,
     ):
         super(Decoder, self).__init__()
@@ -88,7 +86,6 @@ class Decoder(nn.Module):
         self.dictionary = dictionary
         self.max_length = max_length
         self.use_attention = use_attention
-        self.use_concat_hidden = use_concat_hidden
 
         self.embedding = nn.Embedding(len(dictionary), hidden_size)
         self.dropout = nn.Dropout(p=dropout)
@@ -112,7 +109,7 @@ class Decoder(nn.Module):
         # input: int
         # embedded: [1,1, hidden_size]
         embedded = self.embedding(input).view(1, 1, -1)
-        self.dropout(embedded)
+        embedded = self.dropout(embedded)
         attn_weights = None
         if self.use_attention:
             # Following JLTAAT we would supply the embeddings
@@ -128,7 +125,6 @@ class Decoder(nn.Module):
                 attn_weights.unsqueeze(dim=0),
                 encoder_hiddens,
             )
-
             ctxt_cat = torch.cat((embedded.squeeze(), context.squeeze()), dim=-1)
             output = ctxt_cat.view(1, 1, -1)
             output = output.tanh()
@@ -175,7 +171,6 @@ class RNN(nn.Module):
         tgt_dictionary,
         max_length=64,
         use_attention=False,
-        use_concat_hidden=True
     ):
         super(RNN, self).__init__()
 
@@ -192,7 +187,6 @@ class RNN(nn.Module):
             dropout,
             tgt_dictionary,
             use_attention=use_attention,
-            use_concat_hidden=use_concat_hidden,
         )
 
     def device(self):

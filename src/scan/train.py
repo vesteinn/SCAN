@@ -254,7 +254,6 @@ if __name__ == "__main__":
     parser.add_argument("--use_attention", action="store_true", default=False)
     parser.add_argument("--verbose", action="store_true", default=False)
     parser.add_argument("--use_oracle", action="store_true", default=False)
-    parser.add_argument("--use_concat_hidden", action="store_true", default=False)
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
     parser.add_argument("--log_target_probs", action="store_true", default=False)
     parser.add_argument("--seed", type=int, default=None)
@@ -287,7 +286,6 @@ if __name__ == "__main__":
         src_dict,
         tgt_dict,
         use_attention=args.use_attention,
-        use_concat_hidden=args.use_concat_hidden,
     )
     model.to(args.device)
     train(

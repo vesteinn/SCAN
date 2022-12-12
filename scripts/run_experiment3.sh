@@ -25,7 +25,7 @@ done
 
 
 for i in {0..4}; do
-    log_dir=../logs/experiment_3/turn_left
+    log_dir=../logs/experiment_3/turn_left/ob
     mkdir -p $log_dir
     log_file=$log_dir/log_ob_${i}.txt
     model_name=$log_dir/model_${i}.pt
@@ -70,7 +70,7 @@ done
 
 
 for i in {0..4}; do
-    log_dir=../logs/experiment_3/jump
+    log_dir=../logs/experiment_3/jump/ob
     mkdir -p $log_dir
     model_name=$log_dir/model_${i}.pt
     log_file=$log_dir/log_ob_${i}.txt
