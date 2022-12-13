@@ -19,7 +19,10 @@ width = total_width, n = 0.8, 2
 width = total_width/n
 
 plt.bar(np.array([4,6,7,8,9])- width/2,np.mean(gc_command,axis=0)*100,width,yerr = np.std(gc_command,axis=0)/np.sqrt(5)*100,label='GRU')
-plt.bar(np.array([4,6,7,8,9])+ width/2,np.mean(lstm_command,axis=0)*100,width,yerr = np.std(lstm_command,axis=0)/np.sqrt(3)*100,label='LSTM')
+
+#add more bars
+# plt.bar(np.array([4,6,7,8,9])+ width/2,np.mean(lstm_command,axis=0)*100,width,yerr = np.std(lstm_command,axis=0)/np.sqrt(5)*100,label='LSTM')
+
 plt.ylabel('Accuracy on New Commands%')
 plt.xlabel('Command Length')
 plt.legend()
