@@ -138,5 +138,9 @@ if __name__ == "__main__":
     print("--- Experiment 2 ---")
     print(f"Top performing model: {exp_2_top}")
     print(f"Overal best model: {exp_2_ob}")
+
+    # Action and command length
     plot_exp_2("command_length", "Command Sequence Length", exp_2_stats, "./exp2_command.png", legend=["TP", "OB"])
     plot_exp_2("action_length", "Action Sequence Length", exp_2_stats, "./exp2_action.png", legend=["TP", "OB"])
+
+    # Search error and oracle
