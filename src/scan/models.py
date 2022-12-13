@@ -383,3 +383,5 @@ if __name__ == "__main__":
     print("GRU model w.att. forward ran without teacher forcing")
     outputs = gru_model.forward(input, target, teacher_forcing=True)
     print("GRU model w.att.forward ran with teacher forcing")
+
+    breakpoint()
