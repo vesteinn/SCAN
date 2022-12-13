@@ -214,7 +214,9 @@ def train(
                 break
         if step >= steps:
             break
-    torch.save(model, name)
+    if name is not None:
+        torch.save(model, name)
+    
     print(f"Finished - running eval...")
     eval_data, eval_stats = eval(
         model, eval_dataset, log_target_probs=log_target_probs, verbose=verbose
@@ -230,7 +232,7 @@ def train(
     print(f"{json_stats}")
     oracle_string = ""
     if use_oracle:
-        oracle_data, oracle_stats = eval(model, eval_dataset, use_oracle=use_oracle)
+        oracle_data, _oracle_stats = eval(model, eval_dataset, use_oracle=use_oracle)
         oracle_acc = 100 * sum(oracle_data) / len(oracle_data)
         oracle_string = f"(Oracle acc. {oracle_acc:.02f} %) "
     print(
@@ -243,7 +245,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, default="lstm")
     parser.add_argument("--train", type=str)
     parser.add_argument("--valid", type=str)
-    parser.add_argument("--name", type=str, default="last_model.pt")
+    parser.add_argument("--name", type=str, default=None)
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--bsz", type=int, default=1)
     parser.add_argument("--steps", type=int, default=100000)

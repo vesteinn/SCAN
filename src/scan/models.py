@@ -38,32 +38,13 @@ class Attention(nn.Module):
 
     def __init__(self, hidden_size):
         super(Attention, self).__init__()
-        # For alignment between decoder hidden state
-        # and encoder hidden state.
-        # Twice hidden_size to encompass both W_{\alpha}
-        # and U_{\alpha}.
-        self.w = nn.Linear(hidden_size * 2, hidden_size)
-
-        # Learned weight of alignments
+        self.w = nn.Linear(hidden_size, hidden_size)
+        self.u = nn.Linear(hidden_size, hidden_size)
         self.v = nn.Linear(hidden_size, 1, bias=False)
 
     def forward(self, hidden, encoder_hiddens):
-        # hidden: [num_layers, bsz, hidden_size]
-        # encoder_outputs: [max_length, hidden_size]
-        num_outputs = encoder_hiddens.shape[0]
-
-        # repeat so we have concatenation for every
-        # one of the encoder hidden states!
-        # hidden_for_cat: [max_length, hidden_size]
-        hidden_for_cat = hidden.squeeze().repeat(num_outputs, 1)
-
-        # alignment / energy
-        # the energy used in the first class slides,
-        # and in JLTAAT is the concat variant
-        # alignment: [max_length, hidden_siz]
-
-        h_cat = torch.cat((hidden_for_cat, encoder_hiddens), dim=-1)
-        mmal = self.v(self.w(h_cat).tanh()).squeeze()
+        h = self.w(hidden[0]) + self.u(encoder_hiddens)
+        mmal = self.v(h.tanh()).squeeze()
         weights = F.softmax(mmal, dim=-1)
         return weights
 
@@ -93,11 +74,10 @@ class Decoder(nn.Module):
         layer_type = self._get_hidden_type()
         if use_attention:
             self.attention = Attention(hidden_size=hidden_size)
-            # self.attn_combine = nn.Linear(2 * hidden_size, 2 * hidden_size)
             self.hidden_layers = layer_type(
-                2 * hidden_size, hidden_size, num_layers=num_layers, dropout=dropout
+                hidden_size, hidden_size, num_layers=num_layers, dropout=dropout
             )
-            # self.attn_combine2 = nn.Linear(2 * hidden_size, hidden_size)
+            self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
             self.out = nn.Linear(2 * hidden_size, len(dictionary))
         else:
             self.hidden_layers = layer_type(
@@ -112,16 +92,9 @@ class Decoder(nn.Module):
         # embedded: [1,1, hidden_size]
         embedded = self.embedding(input).view(1, 1, -1)
         embedded = self.dropout(embedded)
-        output = embedded
-
-        # todo: are we using the top hidden layer in multilayer?
-
+        
         attn_weights = None
         if self.use_attention:
-            # Following JLTAAT we would supply the embeddings
-            # According to the suplement, only the hidden state
-            # is fed to the attention layer
-            # context: [max_length, hidden_size]
             if self.model_type == "lstm":
                 attn_weights = self.attention(hidden[0], encoder_hiddens)
             else:
@@ -131,34 +104,26 @@ class Decoder(nn.Module):
                 attn_weights.unsqueeze(dim=0),
                 encoder_hiddens,
             )
-            output = torch.cat((embedded.squeeze(), context.squeeze()), dim=-1)
+            output = torch.cat((context.squeeze(), embedded.squeeze()), dim=-1)
+            output = self.attn_combine(output).unsqueeze(0)
             output = output.view(1, 1, -1)
-            #output = self.attn_combine(output)
-            
+            # As in torch tutorial
             output = output.relu()
-            #output = output.tanh()
+
             output, hidden = self.hidden_layers(output, hidden)
 
-            # The supplement is quite explicit that the context vector
-            # is passed as input to the decoder RNN.
-            # "Last the hidden state is concatenated with c_i and mapped
-            # to a softmax"
-
+            # From the supplement:
+            # "Last the hidden state is concatenated with c_i and mapped to a softmax"
             if self.model_type == "lstm":
                 output = torch.cat((context.view(1, 1, -1), hidden[0]), dim=-1)
             else:
                 output = torch.cat((context.view(1, 1, -1), hidden), dim=-1)
-            
-            #output = self.attn_combine2(output)
-            
-            #output = output.relu()
-            output = output.tanh()
+
             output = self.out(output)
         else:
             # as per pytorch rnn attention tutorial
+            output = embedded
             output = output.relu()
-            #output = output.tanh()
-            
             output, hidden = self.hidden_layers(output, hidden)
             output = self.out(output)
         return output, hidden, attn_weights
@@ -249,7 +214,11 @@ class RNN(nn.Module):
             else:
                 enc_hidden = encoder_hidden
 
-            # -1 for the last layer!
+            # -1 for the last layer! is this right?
+            # (This is outputs in the pytorch tutorial)
+            # In the paper it is clear that the hidden states are stored,
+            # in particular the last layer.
+            # TODO: check if improves performance without attention
             encoder_hiddens[idx] = enc_hidden[-1]
 
         decoder_input = torch.tensor(
@@ -260,7 +229,7 @@ class RNN(nn.Module):
         decoder_outputs = []
 
         for idx in range(decoder_max_len):
-            decoder_output, decoder_hidden, _ = self.decoder(
+            decoder_output, decoder_hidden, _decoder_attention = self.decoder(
                 decoder_input, decoder_hidden, encoder_hiddens
             )
 
@@ -289,7 +258,6 @@ class RNN(nn.Module):
 
         if use_oracle:
             # Make last output EOS
-
             decoder_outputs[-1][0][0][self.decoder.dictionary[self.EOS]] += 100
 
         return torch.stack(decoder_outputs)
