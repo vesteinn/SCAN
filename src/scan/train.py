@@ -193,8 +193,9 @@ def train(
 
 
                 # Cross entropy loss, but over length of output/target like tutorial
-                min_len = min(output.shape[0], tgt.shape[0])
-                loss = torch.nn.functional.cross_entropy(
+                min_len = max(output.shape[0], tgt.shape[0])
+
+                loss = min_len * torch.nn.functional.cross_entropy(
                     output_pad[:min_len],
                     tgt_pad[:min_len]
                 )
@@ -206,16 +207,13 @@ def train(
                 # Loss over each step, only over size of target, same as tutorial
                 for i in range(len(tgt) - 1):
                     tgt_tensor = tgt[i]
-                    try:
-                        decoder_logits = output[i]
-                    except:
-                        breakpoint()
+                    decoder_logits = output[i]
                     predicted = nn.functional.log_softmax(decoder_logits, dim=-1)
                     topv, topi = predicted.topk(1)
                     pred_lab = topi.squeeze().detach()
+                    loss += nn.functional.nll_loss(predicted.squeeze(), tgt_tensor)
                     if pred_lab.item() == model.decoder.dictionary[model.EOS]:
                         break
-                    loss += nn.functional.nll_loss(predicted.squeeze(), tgt_tensor)
 
             loss.backward()
 

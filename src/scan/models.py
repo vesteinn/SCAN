@@ -158,6 +158,7 @@ class RNN(nn.Module):
         self.input_size = input_size
         self.max_length = max_length
         self.num_layers = num_layers
+        self.use_attention = use_attention
 
         self.encoder = self._get_encoder()(
             input_size, hidden_size, num_layers, dropout, src_dictionary
@@ -198,7 +199,7 @@ class RNN(nn.Module):
         target_length = target.shape[0]
 
         decoder_max_len = self.max_length
-        if teacher_forcing or use_oracle:
+        if not evaluate: #teacher_forcing or use_oracle:
             decoder_max_len = target_length
 
         # Store state for encoder steps
@@ -219,7 +220,7 @@ class RNN(nn.Module):
             # In the paper it is clear that the hidden states are stored,
             # in particular the last layer.
             encoder_hiddens[idx] = enc_hidden[-1]
-
+  
         decoder_input = torch.tensor(
             self.decoder.dictionary[self.BOS], device=self.device()
         )
@@ -244,9 +245,9 @@ class RNN(nn.Module):
 
 
             # Continue over EOS if not reached length of target
-            if not evaluate:
-                if (use_oracle or teacher_forcing) and len(decoder_outputs) < len(target):
-                    continue
+            # if not evaluate:
+            # if (use_oracle or teacher_forcing) and len(decoder_outputs) < len(target):
+            #    continue
 
             if decoder_input.item() == self.decoder.dictionary[self.EOS]:
                 if not use_oracle:
