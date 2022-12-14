@@ -4,7 +4,7 @@ for i in {0..4}; do
     mkdir -p $log_dir
 	    log_file=$log_dir/log_ob_${i}.txt
     echo "Starting run ${i} for overall best model"
-    python ../src/scan/train.py --device cuda --eval_interval 101000 --train ../data/SCAN/simple_split/tasks_train_simple.txt --valid ../data/SCAN/simple_split/tasks_test_simple.txt --model lstm > $log_file
+    python ../src/scan/train.py --device cuda --eval_interval 5000 --train ../data/SCAN/simple_split/tasks_train_simple.txt --valid ../data/SCAN/simple_split/tasks_test_simple.txt --model lstm > $log_file
     tail -n 1 $log_file
     echo "--"
 done

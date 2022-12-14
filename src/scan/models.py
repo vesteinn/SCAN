@@ -60,7 +60,7 @@ class Decoder(nn.Module):
         dropout,
         dictionary,
         use_attention=False,
-        max_length=64,
+        max_length=49,
     ):
         super(Decoder, self).__init__()
         self.hidden_size = hidden_size
@@ -193,7 +193,7 @@ class RNN(nn.Module):
         )
         return init_weights
 
-    def forward(self, input, target, teacher_forcing=False, use_oracle=False):
+    def forward(self, input, target, teacher_forcing=False, use_oracle=False, evaluate=False):
         input_length = input.shape[0]
         target_length = target.shape[0]
 
@@ -218,7 +218,6 @@ class RNN(nn.Module):
             # (This is outputs in the pytorch tutorial)
             # In the paper it is clear that the hidden states are stored,
             # in particular the last layer.
-            # TODO: check if improves performance without attention
             encoder_hiddens[idx] = enc_hidden[-1]
 
         decoder_input = torch.tensor(
@@ -242,6 +241,12 @@ class RNN(nn.Module):
                 decoder_input = (
                     topi.squeeze().clone().detach()
                 )  # detach from history as input
+
+
+            # Continue over EOS if not reached length of target
+            if not evaluate:
+                if (use_oracle or teacher_forcing) and len(decoder_outputs) < len(target):
+                    continue
 
             if decoder_input.item() == self.decoder.dictionary[self.EOS]:
                 if not use_oracle:

@@ -8,6 +8,7 @@ from collections import defaultdict
 import tqdm
 
 import torch
+from torch import nn
 from torch.utils.data import DataLoader
 
 from data import generate_scan_dictionary
@@ -63,7 +64,7 @@ def eval(
             if len(tgt.shape) == 0:
                 tgt = tgt.unsqueeze(dim=0)
             # Safe to add tgt since we are not teacher forcing
-            output = model(src, tgt, use_oracle=use_oracle)
+            output = model(src, tgt, use_oracle=use_oracle, evaluate=True)
             correct_seq = True
             predicted = []
             probs = []
@@ -87,7 +88,7 @@ def eval(
                 # Teacher force to get probability of target
                 tgt_output = model(src, tgt, teacher_forcing=True)
                 for out_idx, out in enumerate(tgt_output):
-                    prob = torch.nn.functional.log_softmax(out, dim=-1).squeeze()
+                    prob = nn.functional.log_softmax(out, dim=-1).squeeze()
                     tgt_prob = prob[tgt[out_idx]]
                     tgt_probs.append(tgt_prob.item())
             else:
@@ -171,18 +172,51 @@ def train(
             output = model(src, tgt, teacher_forcing=use_teacher_forcing)
 
             # works for bsz 1
-            pad_zeros = torch.zeros(max_length - output.shape[0], output.shape[-1]).to(
-                device
-            )
-            torch.fill(pad_zeros, -100)
+            pad_pred = torch.zeros(
+                max_length - output.shape[0],
+                output.shape[-1]
+            ).to(device)
+
+            torch.fill(pad_pred, -100)
             output_pad = torch.cat(
-                (output.reshape(-1, output.shape[-1]), pad_zeros), dim=0
+                (output.reshape(-1, output.shape[-1]), pad_pred), dim=0
             )
 
             tgt_pad = torch.nn.functional.pad(
                 tgt, (0, max_length - len(tgt)), value=-100
             )
-            loss = torch.nn.functional.cross_entropy(output_pad, tgt_pad)
+
+            use_cross_entropy = True
+            if use_cross_entropy:
+                # Cross entropy loss over entire sequence
+                # loss = torch.nn.functional.cross_entropy(output_pad, tgt_pad)
+
+
+                # Cross entropy loss, but over length of output/target like tutorial
+                min_len = min(output.shape[0], tgt.shape[0])
+                loss = torch.nn.functional.cross_entropy(
+                    output_pad[:min_len],
+                    tgt_pad[:min_len]
+                )
+                #print(loss)
+                #print(diff_loss)
+                #assert torch.isclose(loss, diff_loss)
+            else:
+                loss = 0
+                # Loss over each step, only over size of target, same as tutorial
+                for i in range(len(tgt) - 1):
+                    tgt_tensor = tgt[i]
+                    try:
+                        decoder_logits = output[i]
+                    except:
+                        breakpoint()
+                    predicted = nn.functional.log_softmax(decoder_logits, dim=-1)
+                    topv, topi = predicted.topk(1)
+                    pred_lab = topi.squeeze().detach()
+                    if pred_lab.item() == model.decoder.dictionary[model.EOS]:
+                        break
+                    loss += nn.functional.nll_loss(predicted.squeeze(), tgt_tensor)
+
             loss.backward()
 
             loss_sum += loss
@@ -201,14 +235,8 @@ def train(
                 eval_acc = 100 * sum(eval_data) / len(eval_data)
                 accs.append(eval_acc)
                 max_acc = max(accs)
-                oracle_string = ""
-                # For debugging - too much to run all the time..
-                # if use_oracle:
-                #    oracle_data, oracle_stats = eval(model, eval_dataset, use_oracle=use_oracle)
-                #    oracle_acc = 100 * sum(oracle_data) / len(oracle_data)
-                #    oracle_string = f"(Oracle acc. {oracle_acc:.02f} %) "
                 print(
-                    f"Step {step} - Eval_acc: {eval_acc:.02f} % {oracle_string}over {len(eval_data)} data points (max {max_acc})."
+                    f"Step {step} - Eval_acc: {eval_acc:.02f} % over {len(eval_data)} data points (max {max_acc})."
                 )
             if step >= steps:
                 break
