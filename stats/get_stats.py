@@ -5,6 +5,17 @@ import statistics
 import matplotlib.pyplot as plt
 
 
+def read_eval(lines):
+    data = []
+    for line in lines:
+        if line.startswith('{"src": "'):
+            try:
+                data.append(json.loads(line))
+            except:
+                breakpoint()
+    return data
+
+
 def read_log(path):
     with open(path) as infile:
         lines = infile.readlines()
@@ -15,7 +26,8 @@ def read_log(path):
         if "Oracle" in final_stats:
             oracle_acc = float(sp_line[8])
         stats = json.loads(lines[-2])
-        return {"acc": acc, "stats": stats, "oracle_acc": oracle_acc}
+        preds = read_eval(lines)
+    return {"acc": acc, "stats": stats, "oracle_acc": oracle_acc, "preds": preds}
 
 
 def load_folder(path):
@@ -34,7 +46,10 @@ def load_folder(path):
 def acc(path, key="acc", pattern=""):
     stats = load_folder(path)
     accs = [s[key] for s in stats if pattern in s["path"]]
-    mean = statistics.mean(accs)
+    try:
+        mean = statistics.mean(accs)
+    except:
+        breakpoint()
     stdev = statistics.stdev(accs)
     return f"{mean:.1f} ± {stdev:.1f} %", mean, stdev
 
@@ -122,6 +137,55 @@ def search_error(path):
             pred_over_tgt.append(pred_prob > tgt_prob)
     return sum(pred_over_tgt) / len(pred_over_tgt)
 
+
+def get_neighbours(model_path, terms):
+    tasks = "../data/SCAN/tasks.txt"
+    import torch
+    import sys
+    sys.path.append("../src/scan")
+    model = torch.load(model_path)
+    model.eval()
+
+    def embed(words):
+        encoded = [model.encoder.dictionary[w] for w in words.split()]
+        
+        hidden = model.init_hidden()
+   
+        for word in encoded:
+            output, hidden = model.encoder(torch.tensor(word).to(model.device()), hidden)
+
+        embedding = output.squeeze()
+        return embedding
+
+    src_data = []
+    src_embs = []
+    with open(tasks) as infile:
+        for line in infile.readlines():
+            src = line.split(" OUT:")[0]
+            src = src.split("IN: ")[1]
+            src_data.append(src)
+            src_embs.append(embed(src))
+
+    top_hits = {}
+    for term in terms:
+        sim_scores = torch.zeros(len(src_data))
+        for i in range(len(src_data)):
+            if term == src_data[i]:
+                continue
+
+            sim_score = torch.nn.functional.cosine_similarity(embed(term), src_embs[i], dim=0)
+            sim_scores[i] = sim_score
+        top_hits[term] = sim_scores.topk(5)
+    
+    results = {}
+    for term in top_hits:
+        results[term] = [] 
+        for idx, val in enumerate(top_hits[term].values):
+            text = src_data[top_hits[term].indices[idx]]
+            results[term].append((val.item(), text))
+    return results
+
+
 if __name__ == "__main__":
     log_dir = "../logs_8edd2ad1"
 
@@ -162,7 +226,6 @@ if __name__ == "__main__":
     print(f"Top performing model w. length oracle: {exp_2_top_oracle}")
     print(f"Overal best model w. length oracle: {exp_2_ob_oracle}")
 
-
     # Action and command length
     plot_exp_2("command_length", "Command Sequence Length", exp_2_stats, "./exp2_command.png", legend=["TP", "OB"])
     plot_exp_2("action_length", "Action Sequence Length", exp_2_stats, "./exp2_action.png", legend=["TP", "OB"])
@@ -174,7 +237,6 @@ if __name__ == "__main__":
     print(f"Percentage prefer generated (top): {100 * se_tp:.2f} %")
     print(f"Percentage prefer generated (ob): {100 * se_ob:.2f} %")
 
-    
     #
     # Experiment 3
     #
@@ -190,3 +252,20 @@ if __name__ == "__main__":
     print(f"Top performing model (jump): {exp_3_j_top}")
     print(f"Overal best model (jump): {exp_3_j_ob}")
     
+    # Turn left model errors
+    stats = load_folder(f"{log_dir}/experiment_3/turn_left")[0]
+    incorrect = [pred for pred in stats["preds"] if not pred["correct"]]
+    tlthrice = [pred for pred in incorrect if "turn left thrice" in pred["src"]]
+    tl = [pred for pred in incorrect if "turn left" in pred["src"]]
+
+    print(f"Number incorrect in turn left for tp: {len(incorrect)}")
+    print(f"Number incorrect containing 'turn left thrice': {len(tlthrice)}")
+    print(f"Number incorrect containing 'turn left': {len(tl)}")
+
+    words = ["run", "jump", "run twice", "jump twice"]
+    neighbours = get_neighbours(f"{log_dir}/experiment_3/jump/model_0.pt", words)
+    for term in neighbours:
+        res = neighbours[term]
+        print(f"Neighb for {term}: {res}")
+    
+
