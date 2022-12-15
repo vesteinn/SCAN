@@ -20,6 +20,8 @@ def read_log(path):
     with open(path) as infile:
         lines = infile.readlines()
         final_stats = lines[-1]
+        if "Eval_acc" not in final_stats:
+            raise Exception
         sp_line = final_stats.split()
         acc = float(sp_line[4])
         oracle_acc = None
@@ -49,8 +51,17 @@ def acc(path, key="acc", pattern=""):
     try:
         mean = statistics.mean(accs)
     except:
-        breakpoint()
-    stdev = statistics.stdev(accs)
+        try:
+            mean = accs[0]
+        except:
+            mean = 0
+    try:
+        stdev = statistics.stdev(accs)
+    except:
+        try:
+            stdev = accs[0]
+        except:
+            stdev = 0
     return f"{mean:.1f} ± {stdev:.1f} %", mean, stdev
 
 
@@ -187,7 +198,7 @@ def get_neighbours(model_path, terms):
 
 
 if __name__ == "__main__":
-    log_dir = "../logs_8edd2ad1"
+    log_dir = "../logs"
 
     #
     # Experiment 1
