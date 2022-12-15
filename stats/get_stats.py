@@ -165,7 +165,7 @@ def get_neighbours(model_path, terms):
         for word in encoded:
             output, hidden = model.encoder(torch.tensor(word).to(model.device()), hidden)
 
-        embedding = output.squeeze()
+        embedding = hidden[-1].squeeze()
         return embedding
 
     src_data = []
@@ -198,7 +198,7 @@ def get_neighbours(model_path, terms):
 
 
 if __name__ == "__main__":
-    log_dir = "../logs"
+    log_dir = "../logs_38c637/"
 
     #
     # Experiment 1
@@ -264,14 +264,16 @@ if __name__ == "__main__":
     print(f"Overal best model (jump): {exp_3_j_ob}")
     
     # Turn left model errors
-    stats = load_folder(f"{log_dir}/experiment_3/turn_left")[0]
-    incorrect = [pred for pred in stats["preds"] if not pred["correct"]]
-    tlthrice = [pred for pred in incorrect if "turn left thrice" in pred["src"]]
-    tl = [pred for pred in incorrect if "turn left" in pred["src"]]
+    for i in range(5):
+        
+        stats = load_folder(f"{log_dir}/experiment_3/turn_left")[i]
+        incorrect = [pred for pred in stats["preds"] if not pred["correct"]]
+        tlthrice = [pred for pred in incorrect if "turn left thrice" in pred["src"]]
+        tl = [pred for pred in incorrect if "turn left" in pred["src"]]
 
-    print(f"Number incorrect in turn left for tp: {len(incorrect)}")
-    print(f"Number incorrect containing 'turn left thrice': {len(tlthrice)}")
-    print(f"Number incorrect containing 'turn left': {len(tl)}")
+        print(f"({i}): Number incorrect in turn left for tp: {len(incorrect)}")
+        print(f"({i}): Number incorrect containing 'turn left thrice': {len(tlthrice)}")
+        print(f"({i}): Number incorrect containing 'turn left': {len(tl)}")
 
     words = ["run", "jump", "run twice", "jump twice"]
     neighbours = get_neighbours(f"{log_dir}/experiment_3/jump/model_0.pt", words)
