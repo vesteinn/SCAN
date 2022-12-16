@@ -78,7 +78,7 @@ class Decoder(nn.Module):
                 hidden_size, hidden_size, num_layers=num_layers, dropout=dropout
             )
             self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
-            self.out = nn.Linear(2 * hidden_size, len(dictionary))
+            self.out = nn.Linear(hidden_size, len(dictionary))
         else:
             self.hidden_layers = layer_type(
                 hidden_size, hidden_size, num_layers=num_layers, dropout=dropout
@@ -115,15 +115,15 @@ class Decoder(nn.Module):
             # From the supplement:
             # "Last the hidden state is concatenated with c_i and mapped to a softmax"
             if self.model_type == "lstm":
-                output = torch.cat((context.view(1, 1, -1), hidden[0]), dim=-1)
+                #output = torch.cat((context.view(1, 1, -1), hidden[0]), dim=-1)
+                output = context.view(1, 1, -1) + hidden[0]
             else:
-                output = torch.cat((context.view(1, 1, -1), hidden), dim=-1)
+                #output = torch.cat((context.view(1, 1, -1), hidden), dim=-1)
+                output = context.view(1, 1, -1) + hidden
 
             output = self.out(output)
         else:
-            # as per pytorch rnn attention tutorial
             output = embedded
-            output = output.relu()
             output, hidden = self.hidden_layers(output, hidden)
             output = self.out(output)
         return output, hidden, attn_weights
