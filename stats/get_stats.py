@@ -2,7 +2,11 @@ import json
 import os
 import statistics
 
+import math
 import matplotlib.pyplot as plt
+
+import torch
+import sys
 
 
 def read_eval(lines):
@@ -25,11 +29,13 @@ def read_log(path):
         sp_line = final_stats.split()
         acc = float(sp_line[4])
         oracle_acc = None
+        oracle_stats = None
         if "Oracle" in final_stats:
             oracle_acc = float(sp_line[8])
+            oracle_stats = json.loads(lines[-3])
         stats = json.loads(lines[-2])
         preds = read_eval(lines)
-    return {"acc": acc, "stats": stats, "oracle_acc": oracle_acc, "preds": preds}
+    return {"acc": acc, "stats": stats, "oracle_acc": oracle_acc, "preds": preds, "oracle_stats": oracle_stats}
 
 
 def load_folder(path):
@@ -62,7 +68,8 @@ def acc(path, key="acc", pattern=""):
             stdev = accs[0]
         except:
             stdev = 0
-    return f"{mean:.1f} ± {stdev:.1f} %", mean, stdev
+    stderr = stdev / math.sqrt(len(accs))
+    return f"{mean:.1f} ± {stderr:.1f} %", mean, stderr
 
 
 def exp_1_size_splits(path):
@@ -99,7 +106,8 @@ def action_command_stats(path):
             accs = [stat["stats"][key][length] for stat in stats]
             mean = statistics.mean(accs)
             stdev = statistics.stdev(accs)
-            data[key][length] = (f"{mean:.1f} ± {stdev:.1f} %", mean, stdev)
+            stderr = stdev / math.sqrt(len(accs))
+            data[key][length] = (f"{mean:.1f} ± {stderr:.1f}%", mean,stderr)
 
     return data
 
@@ -150,9 +158,7 @@ def search_error(path):
 
 
 def get_neighbours(model_path, terms):
-    tasks = "../data/SCAN/tasks.txt"
-    import torch
-    import sys
+    tasks = "../data/SCAN/add_prim_split/tasks_train_addprim_jump.txt"
     sys.path.append("../src/scan")
     model = torch.load(model_path)
     model.eval()
@@ -174,17 +180,20 @@ def get_neighbours(model_path, terms):
         for line in infile.readlines():
             src = line.split(" OUT:")[0]
             src = src.split("IN: ")[1]
+            if src in src_data:
+                continue
             src_data.append(src)
             src_embs.append(embed(src))
 
     top_hits = {}
     for term in terms:
-        sim_scores = torch.zeros(len(src_data))
+        term_emb = embed(term)
+        sim_scores = torch.full((len(src_data),), -1000.1)
         for i in range(len(src_data)):
             if term == src_data[i]:
                 continue
 
-            sim_score = torch.nn.functional.cosine_similarity(embed(term), src_embs[i], dim=0)
+            sim_score = torch.nn.functional.cosine_similarity(term_emb, src_embs[i], dim=0)
             sim_scores[i] = sim_score
         top_hits[term] = sim_scores.topk(5)
     
@@ -197,8 +206,32 @@ def get_neighbours(model_path, terms):
     return results
 
 
+def exp_3_complex_splits(path):
+    stats = {}
+    for split in [1, 2, 4, 8, 16, 32, 64]:
+        stats[split] = acc(path, pattern=f"_p{split}_")
+    return stats
+
+
+def plot_exp_3_complex(data, out_file, show=False):
+    height = [d[1] for d in data.values()]
+    yerr = [d[2] for d in data.values()]
+    x = [f"{p}%" for p in data.keys()]
+    xlab = "Percent of commands used for training"
+    ylab = "Accuracy on new commands (%)"
+    plt.bar(x=x, height=height, yerr=yerr)
+    plt.xlabel(xlab)
+    plt.ylabel(ylab)
+    if show:
+        plt.show()
+    else:
+        plt.savefig(out_file)
+    plt.clf()
+    plt.close()
+
+
 if __name__ == "__main__":
-    log_dir = "../logs_38c637/"
+    log_dir = "../logs_tf_first_half/" #logs_1984ade/"
 
     #
     # Experiment 1
@@ -228,6 +261,7 @@ if __name__ == "__main__":
 
     exp_2_stats_ob = action_command_stats(f"{log_dir}/experiment_2/")
     exp_2_stats_tp = action_command_stats(f"{log_dir}/experiment_2/ob")
+
     exp_2_stats = [exp_2_stats_ob, exp_2_stats_tp]
 
     print("--- Experiment 2 ---")
@@ -251,6 +285,7 @@ if __name__ == "__main__":
     #
     # Experiment 3
     #
+
     exp_3_tl_top = acc(f"{log_dir}/experiment_3/turn_left")[0]
     exp_3_tl_ob = acc(f"{log_dir}/experiment_3/turn_left/ob")[0]
     
@@ -264,16 +299,19 @@ if __name__ == "__main__":
     print(f"Overal best model (jump): {exp_3_j_ob}")
     
     # Turn left model errors
+    # TODO: fix this - conjunctions!
     for i in range(5):
         
         stats = load_folder(f"{log_dir}/experiment_3/turn_left")[i]
         incorrect = [pred for pred in stats["preds"] if not pred["correct"]]
         tlthrice = [pred for pred in incorrect if "turn left thrice" in pred["src"]]
+        tltwice = [pred for pred in incorrect if "turn left twice" in pred["src"]]
         tl = [pred for pred in incorrect if "turn left" in pred["src"]]
 
         print(f"({i}): Number incorrect in turn left for tp: {len(incorrect)}")
         print(f"({i}): Number incorrect containing 'turn left thrice': {len(tlthrice)}")
-        print(f"({i}): Number incorrect containing 'turn left': {len(tl)}")
+        print(f"({i}): Number incorrect containing 'turn left twice': {len(tltwice)}")
+        print(f"({i}): Number incorrect containing 'turn left': {len(tl) - len(tlthrice) - len(tltwice)}")
 
     words = ["run", "jump", "run twice", "jump twice"]
     neighbours = get_neighbours(f"{log_dir}/experiment_3/jump/model_0.pt", words)

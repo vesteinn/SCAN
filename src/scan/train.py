@@ -169,6 +169,7 @@ def train(
             use_teacher_forcing = (
                 True if random.random() < teacher_forcing_ratio else False
             )
+
             output = model(src, tgt, teacher_forcing=use_teacher_forcing)
 
             # works for bsz 1
@@ -190,31 +191,12 @@ def train(
             if use_cross_entropy:
                 # Cross entropy loss over entire sequence
                 # loss = torch.nn.functional.cross_entropy(output_pad, tgt_pad)
-
-
-                # Cross entropy loss, but over length of output/target like tutorial
                 min_len = max(output.shape[0], tgt.shape[0])
 
-                loss = min_len * torch.nn.functional.cross_entropy(
+                loss = torch.nn.functional.cross_entropy(
                     output_pad[:min_len],
                     tgt_pad[:min_len]
                 )
-                #print(loss)
-                #print(diff_loss)
-                #assert torch.isclose(loss, diff_loss)
-            else:
-                loss = 0
-                # Loss over each step, only over size of target, same as tutorial
-                for i in range(len(tgt) - 1):
-                    tgt_tensor = tgt[i]
-                    decoder_logits = output[i]
-                    predicted = nn.functional.log_softmax(decoder_logits, dim=-1)
-                    topv, topi = predicted.topk(1)
-                    pred_lab = topi.squeeze().detach()
-                    loss += nn.functional.nll_loss(predicted.squeeze(), tgt_tensor)
-                    if pred_lab.item() == model.decoder.dictionary[model.EOS]:
-                        break
-
             loss.backward()
 
             loss_sum += loss
@@ -255,12 +237,13 @@ def train(
     except:
         breakpoint()
     
-    print(f"{json_stats}")
     oracle_string = ""
     if use_oracle:
-        oracle_data, _oracle_stats = eval(model, eval_dataset, use_oracle=use_oracle)
+        oracle_data, oracle_stats = eval(model, eval_dataset, use_oracle=use_oracle)
         oracle_acc = 100 * sum(oracle_data) / len(oracle_data)
         oracle_string = f"(Oracle acc. {oracle_acc:.02f} %) "
+        print(f"{oracle_stats}")
+    print(f"{json_stats}")
     print(
         f"Step {step} - Eval_acc: {eval_acc:.02f} % {oracle_string}over {len(eval_data)} data points (max {max_acc})."
     )

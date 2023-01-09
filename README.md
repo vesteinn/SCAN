@@ -25,54 +25,19 @@ python src/scan/train.py \
     --model lstm
 ```
 
-Scripts for running all experiments using top-performing architectures and the over-best one are under `./scripts`.
-
-## Experimental setup
-
-### Overall-best architecture
-
-The authors name a single architecture as the *overall-best* one.
-
-* 2-layer LSTM
-* 200 hidden unist per layer
-* No attention
-* Dropout applied at the 0.5 level
-
-* Trained for 100k steps using a batch size of 1
-* ADAM optimizer is used with learning rate 1e-3
-* Gradients are clipped if norm above 5.0
-* Decoding uses teacher forcing with 50% chance
-
-Training (!) accuracy in the paper is reported as at least 99.5% for this model in the key experiments. Top-performing models reach above 95% training accuracy.
-
----
-
-Reproduced experiments from the paper are described below.
-
-## Experiment 1
-
-### 80 / 20 split
-The reported top-performer score is 99.8 % over the test-set, and that of the overall best model is reported as 99.7% on the test-set (averaged over 5 runs). The model only differs from the *overall-best* one in that there is no drop out (and possibly no gradient clipping, though this is unclear in the paper).
-
-### Varying number of distinct samples
-Besides the 80 / 20 split, other experiments using 1, 2, 4, 8, 16, 32 and 64 % of the training data were made.
-
-> (From paper) With 1% of the commands shown during training (about 210 examples), the network performs poorly at about 5% correct. With 2% coverage, performance improves to about 54% correct on the test set. By 4% coverage, performance is about 93% correct. 
-
-## Experiment 2
-
-### Split by length
-In this experiment sequences of length <=22 are used to train and those above for testing.
-
-The best result was achieved using
-* Single layer GRU
-  - With attention
-  - 50-dimensional hidden layer
-  - Dropout 0.5
-
-## Experiment 3
+Scripts for running experiments 1-3 using top-performing architectures and the overall-best one are under `./scripts`.
 
 
+## Statistics
 
-## Experiment 4
+After finishing running the experiments, run
+
+```bash
+cd stats
+python get_stats.py
+```
+
+This will output a report with the results from the experiments and save some figures to the stats folder.
+
+
 
