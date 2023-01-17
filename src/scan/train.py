@@ -16,9 +16,14 @@ from data import SCANDataset
 
 from models import GRURNN
 from models import LSTMRNN
+from transformer_models import SCANTransformer
 
 
-MODEL_MAP = {"lstm": LSTMRNN, "gru": GRURNN}
+MODEL_MAP = {
+    "lstm": LSTMRNN,
+    "gru": GRURNN,
+    "transformer": SCANTransformer
+}
 
 
 def acc_process(acc_dict):
@@ -64,7 +69,10 @@ def eval(
             if len(tgt.shape) == 0:
                 tgt = tgt.unsqueeze(dim=0)
             # Safe to add tgt since we are not teacher forcing
-            output = model(src, tgt, use_oracle=use_oracle, evaluate=True)
+            if model.model_type != "transformer":
+                output = model(src, tgt, use_oracle=use_oracle, evaluate=True)
+            else:
+                output = model.predict(src, tgt, dataset.tgt_dict["BOS"], dataset.tgt_dict["EOS"], use_oracle=use_oracle)
             correct_seq = True
             predicted = []
             probs = []
@@ -120,9 +128,11 @@ def eval(
                         }
                     )
                 )
-
             accuracy.append(correct_seq)
-    assert len(accuracy) == len(dataset)
+            if _ == 1:
+                break
+
+    #assert len(accuracy) == len(dataset)
     accuracy_stats["command_length"] = acc_process(accuracy_stats["command_length"])
     accuracy_stats["action_length"] = acc_process(accuracy_stats["action_length"])
     accuracy_stats["accuracy"] = accuracy
@@ -148,6 +158,7 @@ def train(
     device="cpu",
     log_target_probs=False,
     verbose=False,
+    args=None
 ):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     data_loader = DataLoader(train_dataset, batch_size=bsz, shuffle=True)
@@ -169,8 +180,13 @@ def train(
             use_teacher_forcing = (
                 True if random.random() < teacher_forcing_ratio else False
             )
-
-            output = model(src, tgt, teacher_forcing=use_teacher_forcing)
+            
+            if args.model != "transformer":
+                output = model(src, tgt, teacher_forcing=use_teacher_forcing)
+            else:
+                # TODO: is teacher forcing used?
+                if bsz == 1:
+                    output = model(src.unsqueeze(-1), tgt.unsqueeze(dim=-1))
 
             # works for bsz 1
             pad_pred = torch.zeros(
@@ -187,16 +203,13 @@ def train(
                 tgt, (0, max_length - len(tgt)), value=-100
             )
 
-            use_cross_entropy = True
-            if use_cross_entropy:
-                # Cross entropy loss over entire sequence
-                # loss = torch.nn.functional.cross_entropy(output_pad, tgt_pad)
-                min_len = max(output.shape[0], tgt.shape[0])
+            # Cross entropy loss over entire sequence
+            min_len = max(output.shape[0], tgt.shape[0])
 
-                loss = torch.nn.functional.cross_entropy(
-                    output_pad[:min_len],
-                    tgt_pad[:min_len]
-                )
+            loss = torch.nn.functional.cross_entropy(
+                output_pad[:min_len],
+                tgt_pad[:min_len]
+            )
             loss.backward()
 
             loss_sum += loss
@@ -211,7 +224,7 @@ def train(
 
             if not step % eval_interval:
                 print(f"Step {step} - running eval...")
-                eval_data, eval_stats = eval(model, eval_dataset)
+                eval_data, eval_stats = eval(model, eval_dataset, verbose=verbose)
                 eval_acc = 100 * sum(eval_data) / len(eval_data)
                 accs.append(eval_acc)
                 max_acc = max(accs)
@@ -271,6 +284,10 @@ if __name__ == "__main__":
     parser.add_argument("--log_target_probs", action="store_true", default=False)
     parser.add_argument("--seed", type=int, default=None)
 
+    # Transformer specific
+    parser.add_argument("--nheads", type=int, default=6)
+
+
     args = parser.parse_args()
 
     if args.seed is not None:
@@ -290,16 +307,29 @@ if __name__ == "__main__":
     print(f"Loaded validation dataset with {len(valid_dataset)} entries")
 
     model = MODEL_MAP[args.model]
-    # hidden_dim, num_layers, drop_out
-    model = model(
-        len(src_dict),
-        args.hidden_dim,
-        args.layers,
-        args.dropout,
-        src_dict,
-        tgt_dict,
-        use_attention=args.use_attention,
-    )
+    if args.model != "transformer":
+        model = model(
+            len(src_dict),
+            args.hidden_dim,
+            args.layers,
+            args.dropout,
+            src_dict,
+            tgt_dict,
+            use_attention=args.use_attention,
+        )
+    else:
+        # SCANTransformer
+        model = model(
+            src_size=len(src_dict),
+            tgt_size=len(tgt_dict),
+            d_model=args.hidden_dim,
+            nhead=args.nheads,
+            num_encoder_layers=args.layers,
+            num_decoder_layers=args.layers,
+            dim_feedforward=args.hidden_dim * 4,
+            dropout=args.dropout
+        )
+
     model.to(args.device)
     train(
         model,
@@ -313,4 +343,5 @@ if __name__ == "__main__":
         device=args.device,
         log_target_probs=args.log_target_probs,
         verbose=args.verbose,
+        args=args
     )
