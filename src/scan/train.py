@@ -1,6 +1,8 @@
 import argparse
 import json
+from difflib import SequenceMatcher
 import os
+import pprint
 import random
 
 from collections import defaultdict
@@ -52,8 +54,10 @@ def eval(
         "pred_probs": [],
         "tgt_probs": [],
     }
+
     accuracy = []
     data_loader = DataLoader(dataset, batch_size=bsz)
+    total_match = 0
     with torch.no_grad():
         for _, data in tqdm.tqdm(enumerate(data_loader), total=len(dataset)):
             src, tgt = data
@@ -78,6 +82,11 @@ def eval(
             probs = []
             if len(tgt) != len(output):
                 correct_seq = False
+
+            # Remove EOS
+            if use_oracle and model.model_type == "transformer":
+                tgt = tgt[:-1]
+                output = output[:len(tgt)]
 
             for out_idx, out in enumerate(output):
                 prob = torch.nn.functional.log_softmax(out, dim=-1).squeeze()
@@ -117,19 +126,32 @@ def eval(
             # neg 1 since eos
             accuracy_stats["action_length"][len(tgt) - 1].append(correct_seq)
             accuracy_stats["command_length"][len(src) - 1].append(correct_seq)
+            
             if verbose:
-                print(
-                    json.dumps(
-                        {
-                            "src": decoded_src,
-                            "tgt": decoded_tgt,
-                            "pred": decoded_pred,
-                            "correct": correct_seq,
-                        }
-                    )
-                )
+                #print(
+                #    json.dumps(
+                #        {
+                #            "src": decoded_src,
+                #            "tgt": decoded_tgt,
+                #            "pred": decoded_pred,
+                #            "correct": correct_seq,
+                #            "pred_len": len(decoded_pred.split())
+                #        }
+                #    )
+                #)
+                print("---")
+                print(f"src: {decoded_src}")
+                print(f"tgt: {decoded_tgt}")
+                print(f"pred: {decoded_pred}")
+                print(f"len: {len(decoded_pred.split())}")
+                match = SequenceMatcher(None, decoded_tgt.split(), decoded_pred.split()).find_longest_match(0, len(decoded_tgt.split()), 0, len(decoded_pred.split()))
+                total_match += match.size
+                print(f"lcs: {match.size}")
             accuracy.append(correct_seq)
-            if _ == 1:
+            if _ == 10:
+                if verbose:
+                    avg_lcs = total_match / 10
+                    print(f"avg_lcs: {avg_lcs}")
                 break
 
     #assert len(accuracy) == len(dataset)
@@ -184,9 +206,14 @@ def train(
             if args.model != "transformer":
                 output = model(src, tgt, teacher_forcing=use_teacher_forcing)
             else:
-                # TODO: is teacher forcing used?
-                if bsz == 1:
-                    output = model(src.unsqueeze(-1), tgt.unsqueeze(dim=-1))
+                bos = train_dataset.tgt_dict["BOS"]
+                eos = train_dataset.tgt_dict["EOS"]
+                bos_tgt = torch.cat((torch.tensor([bos]), tgt))
+                bos_tgt_eos = torch.cat((bos_tgt, torch.tensor([eos])))
+                # Output is not right shifted by BOS
+                output = model(src.unsqueeze(0), bos_tgt_eos.unsqueeze(dim=0), training=True)
+
+                # cap ? 
 
             # works for bsz 1
             pad_pred = torch.zeros(
@@ -205,7 +232,7 @@ def train(
 
             # Cross entropy loss over entire sequence
             min_len = max(output.shape[0], tgt.shape[0])
-
+            
             loss = torch.nn.functional.cross_entropy(
                 output_pad[:min_len],
                 tgt_pad[:min_len]
@@ -224,7 +251,7 @@ def train(
 
             if not step % eval_interval:
                 print(f"Step {step} - running eval...")
-                eval_data, eval_stats = eval(model, eval_dataset, verbose=verbose)
+                eval_data, eval_stats = eval(model, eval_dataset, verbose=verbose, use_oracle=use_oracle)
                 eval_acc = 100 * sum(eval_data) / len(eval_data)
                 accs.append(eval_acc)
                 max_acc = max(accs)
