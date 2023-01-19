@@ -218,7 +218,7 @@ def train(
                 output = output
 
                 tgt = tgt[1:]
-                tgt = torch.cat((tgt, torch.tensor([6])))
+                tgt = torch.cat((tgt, torch.tensor([6]).to(args.device)))
                 output = torch.nn.functional.pad(output, (0, len(tgt) - len(output)), value=6)
 
 
