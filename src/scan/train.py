@@ -90,10 +90,9 @@ def eval(
 
             for out_idx, out in enumerate(output):
                 prob = torch.nn.functional.log_softmax(out, dim=-1).squeeze()
-                pred = prob.argmax()
+                pred = prob.argmax() 
                 probs.append(prob[pred].item())
                 predicted.append(pred)
-
                 if len(tgt) == len(output):
                     target = tgt[out_idx]
                     if target != pred:
@@ -123,7 +122,6 @@ def eval(
             except:
                 breakpoint()
 
-            # neg 1 since eos
             accuracy_stats["action_length"][len(tgt) - 1].append(correct_seq)
             accuracy_stats["command_length"][len(src) - 1].append(correct_seq)
             
@@ -148,9 +146,9 @@ def eval(
                 total_match += match.size
                 print(f"lcs: {match.size}")
             accuracy.append(correct_seq)
-            if _ == 10:
+            if _ == 3:
                 if verbose:
-                    avg_lcs = total_match / 10
+                    avg_lcs = total_match / 3
                     print(f"avg_lcs: {avg_lcs}")
                 break
 
@@ -188,6 +186,12 @@ def train(
     loss_sum = 0
     max_acc = 0
     accs = []
+
+    bos = train_dataset.tgt_dict["BOS"]
+    eos = train_dataset.tgt_dict["EOS"]
+
+    accuracy = 0
+
     for _epoch in range(1 + steps // len(data_loader)):
         for idx, data in tqdm.tqdm(enumerate(data_loader), total=len(data_loader)):
             optimizer.zero_grad()
@@ -206,15 +210,19 @@ def train(
             if args.model != "transformer":
                 output = model(src, tgt, teacher_forcing=use_teacher_forcing)
             else:
-                bos = train_dataset.tgt_dict["BOS"]
-                eos = train_dataset.tgt_dict["EOS"]
-                bos_tgt = torch.cat((torch.tensor([bos]), tgt))
-                bos_tgt_eos = torch.cat((bos_tgt, torch.tensor([eos])))
-                # Output is not right shifted by BOS
-                output = model(src.unsqueeze(0), bos_tgt_eos.unsqueeze(dim=0), training=True)
+                #bos_tgt = torch.cat((torch.tensor([bos]), tgt))
+                #tgt_eos = torch.cat((tgt, torch.tensor([eos])))
+                #bos_tgt_eos = torch.cat((bos_tgt, torch.tensor([eos])))
 
-                # cap ? 
+                output = model(src.unsqueeze(dim=0), tgt.unsqueeze(dim=0))
+                output = output
 
+                tgt = tgt[1:]
+                tgt = torch.cat((tgt, torch.tensor([6])))
+                output = torch.nn.functional.pad(output, (0, len(tgt) - len(output)), value=6)
+
+
+            # Redundant now that padding has been added - remove
             # works for bsz 1
             pad_pred = torch.zeros(
                 max_length - output.shape[0],
@@ -226,6 +234,21 @@ def train(
                 (output.reshape(-1, output.shape[-1]), pad_pred), dim=0
             )
 
+            pred = output.reshape(-1, output.shape[-1]).argmax(dim=-1)
+             
+            eos_found = 8 in pred
+            eos_last = pred[-1] == eos
+            cor_len = len(pred) == len(tgt)
+            
+            if verbose and step % 150 == 0:
+                if torch.all(torch.eq(pred, tgt)):
+                    accuracy = 1
+                print(f"Acc: {accuracy}")
+                print(pred)
+                print(tgt)
+                #if eos_found:
+                #    print(f"{eos_found}\t{eos_last}\t{cor_len}")
+
             tgt_pad = torch.nn.functional.pad(
                 tgt, (0, max_length - len(tgt)), value=-100
             )
@@ -233,10 +256,21 @@ def train(
             # Cross entropy loss over entire sequence
             min_len = max(output.shape[0], tgt.shape[0])
             
-            loss = torch.nn.functional.cross_entropy(
-                output_pad[:min_len],
-                tgt_pad[:min_len]
-            )
+            if args.model == "transformer":
+                loss = torch.nn.functional.cross_entropy(
+                    output.reshape(-1, output.shape[-1]),
+                    tgt,
+                    #ignore_index=train_dataset.tgt_dict["PAD"]
+                )
+            else:
+                loss = torch.nn.functional.cross_entropy(
+                    output_pad,
+                    tgt_pad,
+                    ignore_index=-100
+                )
+
+            #breakpoint()
+
             loss.backward()
 
             loss_sum += loss
@@ -328,8 +362,13 @@ if __name__ == "__main__":
     data_path = f"{cur_path}/../../data/SCAN"
     tasks = f"{data_path}/tasks.txt"
     src_dict, tgt_dict = generate_scan_dictionary(tasks, add_bos=True, add_eos=True)
-    train_dataset = SCANDataset(args.train, src_dict, tgt_dict, device=args.device)
-    valid_dataset = SCANDataset(args.valid, src_dict, tgt_dict, device=args.device)
+    
+    pad = 0
+    if args.model == "transformer":
+        pad = 50
+    
+    train_dataset = SCANDataset(args.train, src_dict, tgt_dict, device=args.device, pad=pad)
+    valid_dataset = SCANDataset(args.valid, src_dict, tgt_dict, device=args.device, pad=pad)
     print(f"Loaded train dataset with {len(train_dataset)} entries")
     print(f"Loaded validation dataset with {len(valid_dataset)} entries")
 

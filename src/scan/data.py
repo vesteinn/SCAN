@@ -46,12 +46,13 @@ def generate_scan_dictionary(full_dataset, add_bos=True, add_eos=True):
 
 
 class SCANDataset(torch.utils.data.Dataset):
-    def __init__(self, data, src_dict, tgt_dict, device):
+    def __init__(self, data, src_dict, tgt_dict, device, pad=0):
         self.src_dict = src_dict
         self.tgt_dict = tgt_dict
         self.device = device
         self.commands = []
         self.actions = []
+        self.pad = pad
         self.load(data)
 
     def __len__(self):
@@ -67,13 +68,18 @@ class SCANDataset(torch.utils.data.Dataset):
         if add_bos:
             text = "BOS " + text
         encoding = [dictionary[a] for a in text.strip().split()]
-        return torch.tensor(encoding).to(self.device)
+        encoding = torch.tensor(encoding).to(self.device)
+        if self.pad:
+            pad_id = dictionary["PAD"]
+            encoding = F.pad(encoding, (0, self.pad - len(encoding)), value=pad_id)
+            assert len(encoding) == self.pad
+        return encoding
 
     def encode_command(self, command):
-        return self.encode(command, self.src_dict, add_eos=True)
+        return self.encode(command, self.src_dict, add_bos=True, add_eos=True)
 
     def encode_action(self, action):
-        return self.encode(action, self.tgt_dict, add_eos=True)
+        return self.encode(action, self.tgt_dict, add_bos=True, add_eos=True)
 
     def load(self, data):
         with open(data) as infile:

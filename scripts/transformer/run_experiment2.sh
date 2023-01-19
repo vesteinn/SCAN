@@ -13,13 +13,13 @@ for i in {0..0}; do
     echo "Starting run ${i} for Transformer model"
     python ../src/scan/train.py --device cpu \
         --train $train_file --valid $valid_file --model transformer \
-        --use_oracle \
-        --dropout 0.1 \
-        --nheads 4 --lr 0.001 --layers 1 --hidden_dim 100 --eval_interval 500 --verbose #> debugout3 #--verbose > $log_file
+        --dropout 0.5 \
+        --nheads 4 --lr 0.001 --layers 1 --hidden_dim 100 --eval_interval 500 --verbose #> debugout3_for_paper #--verbose > $log_file
     tail -n 1 $log_file
     echo "--"
 done
 
 
+# --use_oracle \
 
 

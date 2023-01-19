@@ -44,11 +44,7 @@ class SCANTransformer(nn.Module):
 
         self.embedding = nn.Embedding(src_size, n_dim)
         self.output_embedding = nn.Embedding(tgt_size, n_dim)
-        self.dropout = nn.Dropout(p=0.1)
         self.positional_encoder = PositionalEncoding(
-            dim_model=n_dim, dropout_p=kwargs["dropout"], max_len=self.max_length
-        )
-        self.positional_encoder_tgt = PositionalEncoding(
             dim_model=n_dim, dropout_p=kwargs["dropout"], max_len=self.max_length
         )
         self.transformer = nn.Transformer(
@@ -57,11 +53,10 @@ class SCANTransformer(nn.Module):
         self.out = nn.Linear(n_dim, tgt_size)
         self._reset_parameters()
 
-    def forward(self, src, tgt, tgt_mask=None, src_mask=None, training=True):
+    def forward(self, src, tgt, tgt_mask=None):
+        src_output = self.embedding(src)
+        tgt_output = self.output_embedding(tgt)
 
-        src_output = self.dropout(self.embedding(src))
-        tgt_output = self.dropout(self.output_embedding(tgt))
-        
         src_output *= math.sqrt(self.n_dim)
         tgt_output *= math.sqrt(self.n_dim)
         
@@ -71,92 +66,76 @@ class SCANTransformer(nn.Module):
         src_output = src_output.permute(1, 0, 2)
         tgt_output = tgt_output.permute(1, 0, 2)
         
+        src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.get_masks(src, tgt)
+
+        output = self.transformer(
+            src_output, tgt_output, src_mask=src_mask, tgt_mask=tgt_mask,
+            src_key_padding_mask=src_padding_mask, tgt_key_padding_mask=tgt_padding_mask,
+            memory_key_padding_mask=src_padding_mask)
+        output = self.out(output)
+        return output
+
+    def get_masks(self, src, tgt):
+        DEVICE = self.device()
+        src_seq_len = src.shape[1]
+        tgt_seq_len = tgt.shape[1]
+
+        tgt_mask = self.transformer.generate_square_subsequent_mask(tgt_seq_len).to(self.device())
+        src_mask = torch.zeros((src_seq_len, src_seq_len), device=DEVICE).type(torch.bool)
+        # This should be read from the dicts.
+        src_padding_mask = (src == 13)
+        tgt_padding_mask = (tgt == 6)
+
+        return src_mask, tgt_mask, src_padding_mask, tgt_padding_mask
+
+    def teacher_force_predict(self, src, tgt, tgt_mask=None):
+        output = self.forward(src, tgt, tgt_mask=tgt_mask)
+        pred = output.reshape(-1, output.shape[-1]).argmax(dim=-1)
+        return pred
+
+    def encode(self, src):
+        src_output = self.embedding(src)
+        src_output *= math.sqrt(self.n_dim)
+        src_output = self.positional_encoder(src_output)
+        src_output = src_output.permute(1, 0, 2)
+        output = self.transformer.encoder(src_output)
+        return output
+
+    def decode(self, tgt, memory, tgt_mask=None):
+        tgt_output = self.output_embedding(tgt)
+        tgt_output *= math.sqrt(self.n_dim)
+        tgt_output = self.positional_encoder(tgt_output)
+        tgt_output = tgt_output.permute(1, 0, 2)
+        
         if tgt_mask is None:
             tgt_mask = self.transformer.generate_square_subsequent_mask(tgt.shape[1]).to(self.device())
-
-        output = self.transformer(src_output, tgt_output, tgt_mask=tgt_mask, src_mask=src_mask)
-        output = self.out(output)
+        output = self.transformer.decoder(tgt_output, memory, tgt_mask=tgt_mask)
         return output
 
     def device(self):
         return next(self.transformer.encoder.parameters()).device
 
     def predict(self, src, tgt, bos, eos, use_oracle=True):
-        #src_output = self.embedding(src)
-        #encoder_output = self.transformer.encoder(src_output).unsqueeze(dim=1)
-        
         device = self.device()
-
         output = torch.ones(1, self.max_length).long().to(device) * bos
-        
         output_probs = []
 
         for t in range(1, self.max_length):
-            # Shift by one to predict last
-            #tgt_emb = self.output_embedding(output[:, :t]).transpose(1, 0)
-            
             tgt_mask = self.transformer.generate_square_subsequent_mask(t).to(device)
+            decoder_output = self.forward(src.unsqueeze(dim=0), output[:, :t])            
             
-            #breakpoint()
-            #decoder_output = self.transformer.decoder(
-            #    tgt=tgt_emb,
-            #    memory=encoder_output,
-            #    tgt_mask=tgt_mask
-            #)
-
-            decoder_output = self.forward(src.unsqueeze(dim=0), output[:, :t], tgt_mask=tgt_mask, training=False)            
-            #decoder_output = decoder_output.permute(1, 2, 0)
-
-            #breakpoint()
             pred_proba_t = decoder_output[-1, :, :]
             output_prob, output_t = pred_proba_t.data.topk(1)
 
-            #breakpoint() 
             output[:, t] = output_t.squeeze()
             output_probs.append(pred_proba_t)
-
-            #breakpoint()
-
-            if t >= len(tgt) + 2:
-                return torch.stack(output_probs)
-
+            
+            if t >= len(tgt) + 1:
+                break 
+            
             if output_t.squeeze() == eos:
-                return torch.stack(output_probs)
-
-        return torch.stack(output_probs)
-
-    def predictTry(self, src, tgt, bos, eos, use_oracle=True):
-        model = self
-        input_sequence = src
-        SOS_token = bos
-        EOS_token = 3
-        max_length = self.max_length
-        device = self.device()
-
-        model.eval()
-        
-        y_input = torch.tensor([[SOS_token]], dtype=torch.long, device=device)
-
-        num_tokens = len(input_sequence)
-
-        for _ in range(max_length):
-            # Get source mask
-            tgt_mask = self.transformer.generate_square_subsequent_mask(y_input.size(1)).to(device)
-            
-            pred = model(input_sequence, y_input.unsqueeze(dim=0), tgt_mask=tgt_mask)
-            
-            next_item = pred.topk(1)[1].view(-1)[-1].item() # num with highest probability
-            next_item = torch.tensor([[next_item]], device=device)
-
-            # Concatenate previous input with predicted best word
-            y_input = torch.cat((y_input, next_item), dim=1)
-
-            # Stop if model predicts end of sentence
-            if next_item.view(-1).item() == EOS_token:
                 break
-
-        return y_input.view(-1).tolist()
-
+        return torch.stack(output_probs)
 
     def _reset_parameters(self):
         r"""Initiate parameters in the transformer model."""
