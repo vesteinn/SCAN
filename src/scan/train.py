@@ -21,11 +21,7 @@ from models import LSTMRNN
 from transformer_models import SCANTransformer
 
 
-MODEL_MAP = {
-    "lstm": LSTMRNN,
-    "gru": GRURNN,
-    "transformer": SCANTransformer
-}
+MODEL_MAP = {"lstm": LSTMRNN, "gru": GRURNN, "transformer": SCANTransformer}
 
 
 def acc_process(acc_dict):
@@ -76,7 +72,13 @@ def eval(
             if model.model_type != "transformer":
                 output = model(src, tgt, use_oracle=use_oracle, evaluate=True)
             else:
-                output = model.predict(src, tgt, dataset.tgt_dict["BOS"], dataset.tgt_dict["EOS"], use_oracle=use_oracle)
+                output = model.predict(
+                    src,
+                    tgt,
+                    dataset.tgt_dict["BOS"],
+                    dataset.tgt_dict["EOS"],
+                    use_oracle=use_oracle,
+                )
             correct_seq = True
             predicted = []
             probs = []
@@ -86,11 +88,11 @@ def eval(
             # Remove EOS
             if use_oracle and model.model_type == "transformer":
                 tgt = tgt[:-1]
-                output = output[:len(tgt)]
+                output = output[: len(tgt)]
 
             for out_idx, out in enumerate(output):
                 prob = torch.nn.functional.log_softmax(out, dim=-1).squeeze()
-                pred = prob.argmax() 
+                pred = prob.argmax()
                 probs.append(prob[pred].item())
                 predicted.append(pred)
                 if len(tgt) == len(output):
@@ -124,27 +126,27 @@ def eval(
 
             accuracy_stats["action_length"][len(tgt) - 1].append(correct_seq)
             accuracy_stats["command_length"][len(src) - 1].append(correct_seq)
-            
+
             if verbose:
-                #print(
-                #    json.dumps(
-                #        {
-                #            "src": decoded_src,
-                #            "tgt": decoded_tgt,
-                #            "pred": decoded_pred,
-                #            "correct": correct_seq,
-                #            "pred_len": len(decoded_pred.split())
-                #        }
-                #    )
-                #)
-                print("---")
-                print(f"src: {decoded_src}")
-                print(f"tgt: {decoded_tgt}")
-                print(f"pred: {decoded_pred}")
-                print(f"len: {len(decoded_pred.split())}")
-                match = SequenceMatcher(None, decoded_tgt.split(), decoded_pred.split()).find_longest_match(0, len(decoded_tgt.split()), 0, len(decoded_pred.split()))
-                total_match += match.size
-                print(f"lcs: {match.size}")
+                print(
+                    json.dumps(
+                        {
+                            "src": decoded_src,
+                            "tgt": decoded_tgt,
+                            "pred": decoded_pred,
+                            "correct": correct_seq,
+                            "pred_len": len(decoded_pred.split()),
+                        }
+                    )
+                )
+                # print("---")
+                # print(f"src: {decoded_src}")
+                # print(f"tgt: {decoded_tgt}")
+                # print(f"pred: {decoded_pred}")
+                # print(f"len: {len(decoded_pred.split())}")
+                # match = SequenceMatcher(None, decoded_tgt.split(), decoded_pred.split()).find_longest_match(0, len(decoded_tgt.split()), 0, len(decoded_pred.split()))
+                # total_match += match.size
+                # print(f"lcs: {match.size}")
             accuracy.append(correct_seq)
             if _ == 3:
                 if verbose:
@@ -152,7 +154,7 @@ def eval(
                     print(f"avg_lcs: {avg_lcs}")
                 break
 
-    #assert len(accuracy) == len(dataset)
+    # assert len(accuracy) == len(dataset)
     accuracy_stats["command_length"] = acc_process(accuracy_stats["command_length"])
     accuracy_stats["action_length"] = acc_process(accuracy_stats["action_length"])
     accuracy_stats["accuracy"] = accuracy
@@ -178,7 +180,7 @@ def train(
     device="cpu",
     log_target_probs=False,
     verbose=False,
-    args=None
+    args=None,
 ):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     data_loader = DataLoader(train_dataset, batch_size=bsz, shuffle=True)
@@ -206,28 +208,24 @@ def train(
             use_teacher_forcing = (
                 True if random.random() < teacher_forcing_ratio else False
             )
-            
+
             if args.model != "transformer":
                 output = model(src, tgt, teacher_forcing=use_teacher_forcing)
             else:
-                #bos_tgt = torch.cat((torch.tensor([bos]), tgt))
-                #tgt_eos = torch.cat((tgt, torch.tensor([eos])))
-                #bos_tgt_eos = torch.cat((bos_tgt, torch.tensor([eos])))
-
                 output = model(src.unsqueeze(dim=0), tgt.unsqueeze(dim=0))
                 output = output
 
                 tgt = tgt[1:]
                 tgt = torch.cat((tgt, torch.tensor([6]).to(args.device)))
-                output = torch.nn.functional.pad(output, (0, len(tgt) - len(output)), value=6)
-
+                output = torch.nn.functional.pad(
+                    output, (0, len(tgt) - len(output)), value=6
+                )
 
             # Redundant now that padding has been added - remove
             # works for bsz 1
-            pad_pred = torch.zeros(
-                max_length - output.shape[0],
-                output.shape[-1]
-            ).to(device)
+            pad_pred = torch.zeros(max_length - output.shape[0], output.shape[-1]).to(
+                device
+            )
 
             torch.fill(pad_pred, -100)
             output_pad = torch.cat(
@@ -235,19 +233,17 @@ def train(
             )
 
             pred = output.reshape(-1, output.shape[-1]).argmax(dim=-1)
-             
+
             eos_found = 8 in pred
             eos_last = pred[-1] == eos
             cor_len = len(pred) == len(tgt)
-            
-            if verbose and step % 150 == 0:
+
+            if False and verbose and step % 150 == 0:
                 if torch.all(torch.eq(pred, tgt)):
                     accuracy = 1
                 print(f"Acc: {accuracy}")
                 print(pred)
                 print(tgt)
-                #if eos_found:
-                #    print(f"{eos_found}\t{eos_last}\t{cor_len}")
 
             tgt_pad = torch.nn.functional.pad(
                 tgt, (0, max_length - len(tgt)), value=-100
@@ -255,21 +251,17 @@ def train(
 
             # Cross entropy loss over entire sequence
             min_len = max(output.shape[0], tgt.shape[0])
-            
+
             if args.model == "transformer":
                 loss = torch.nn.functional.cross_entropy(
                     output.reshape(-1, output.shape[-1]),
                     tgt,
-                    #ignore_index=train_dataset.tgt_dict["PAD"]
+                    # ignore_index=train_dataset.tgt_dict["PAD"]
                 )
             else:
                 loss = torch.nn.functional.cross_entropy(
-                    output_pad,
-                    tgt_pad,
-                    ignore_index=-100
+                    output_pad, tgt_pad, ignore_index=-100
                 )
-
-            #breakpoint()
 
             loss.backward()
 
@@ -285,7 +277,9 @@ def train(
 
             if not step % eval_interval:
                 print(f"Step {step} - running eval...")
-                eval_data, eval_stats = eval(model, eval_dataset, verbose=verbose, use_oracle=use_oracle)
+                eval_data, eval_stats = eval(
+                    model, eval_dataset, verbose=verbose, use_oracle=use_oracle
+                )
                 eval_acc = 100 * sum(eval_data) / len(eval_data)
                 accs.append(eval_acc)
                 max_acc = max(accs)
@@ -298,7 +292,7 @@ def train(
             break
     if name is not None:
         torch.save(model, name)
-    
+
     print(f"Finished - running eval...")
     eval_data, eval_stats = eval(
         model, eval_dataset, log_target_probs=log_target_probs, verbose=verbose
@@ -310,7 +304,7 @@ def train(
         json_stats = json.dumps(eval_stats)
     except:
         breakpoint()
-    
+
     oracle_string = ""
     if use_oracle:
         oracle_data, oracle_stats = eval(model, eval_dataset, use_oracle=use_oracle)
@@ -348,7 +342,6 @@ if __name__ == "__main__":
     # Transformer specific
     parser.add_argument("--nheads", type=int, default=6)
 
-
     args = parser.parse_args()
 
     if args.seed is not None:
@@ -362,13 +355,17 @@ if __name__ == "__main__":
     data_path = f"{cur_path}/../../data/SCAN"
     tasks = f"{data_path}/tasks.txt"
     src_dict, tgt_dict = generate_scan_dictionary(tasks, add_bos=True, add_eos=True)
-    
+
     pad = 0
     if args.model == "transformer":
         pad = 50
-    
-    train_dataset = SCANDataset(args.train, src_dict, tgt_dict, device=args.device, pad=pad)
-    valid_dataset = SCANDataset(args.valid, src_dict, tgt_dict, device=args.device, pad=pad)
+
+    train_dataset = SCANDataset(
+        args.train, src_dict, tgt_dict, device=args.device, pad=pad
+    )
+    valid_dataset = SCANDataset(
+        args.valid, src_dict, tgt_dict, device=args.device, pad=pad
+    )
     print(f"Loaded train dataset with {len(train_dataset)} entries")
     print(f"Loaded validation dataset with {len(valid_dataset)} entries")
 
@@ -393,7 +390,7 @@ if __name__ == "__main__":
             num_encoder_layers=args.layers,
             num_decoder_layers=args.layers,
             dim_feedforward=args.hidden_dim * 4,
-            dropout=args.dropout
+            dropout=args.dropout,
         )
 
     model.to(args.device)
@@ -409,5 +406,5 @@ if __name__ == "__main__":
         device=args.device,
         log_target_probs=args.log_target_probs,
         verbose=args.verbose,
-        args=args
+        args=args,
     )

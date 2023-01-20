@@ -76,10 +76,10 @@ class SCANDataset(torch.utils.data.Dataset):
         return encoding
 
     def encode_command(self, command):
-        return self.encode(command, self.src_dict, add_bos=True, add_eos=True)
+        return self.encode(command, self.src_dict, add_bos=False, add_eos=True)
 
     def encode_action(self, action):
-        return self.encode(action, self.tgt_dict, add_bos=True, add_eos=True)
+        return self.encode(action, self.tgt_dict, add_bos=False, add_eos=True)
 
     def load(self, data):
         with open(data) as infile:

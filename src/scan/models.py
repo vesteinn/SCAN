@@ -92,14 +92,14 @@ class Decoder(nn.Module):
         # embedded: [1,1, hidden_size]
         embedded = self.embedding(input).view(1, 1, -1)
         embedded = self.dropout(embedded)
-        
+
         attn_weights = None
         if self.use_attention:
             if self.model_type == "lstm":
                 attn_weights = self.attention(hidden[0], encoder_hiddens)
             else:
                 attn_weights = self.attention(hidden, encoder_hiddens)
-            
+
             context = torch.mm(
                 attn_weights.unsqueeze(dim=0),
                 encoder_hiddens,
@@ -115,10 +115,10 @@ class Decoder(nn.Module):
             # From the supplement:
             # "Last the hidden state is concatenated with c_i and mapped to a softmax"
             if self.model_type == "lstm":
-                #output = torch.cat((context.view(1, 1, -1), hidden[0]), dim=-1)
+                # output = torch.cat((context.view(1, 1, -1), hidden[0]), dim=-1)
                 output = context.view(1, 1, -1) + hidden[0]
             else:
-                #output = torch.cat((context.view(1, 1, -1), hidden), dim=-1)
+                # output = torch.cat((context.view(1, 1, -1), hidden), dim=-1)
                 output = context.view(1, 1, -1) + hidden
 
             output = self.out(output)
@@ -194,12 +194,14 @@ class RNN(nn.Module):
         )
         return init_weights
 
-    def forward(self, input, target, teacher_forcing=False, use_oracle=False, evaluate=False):
+    def forward(
+        self, input, target, teacher_forcing=False, use_oracle=False, evaluate=False
+    ):
         input_length = input.shape[0]
         target_length = target.shape[0]
 
         decoder_max_len = self.max_length
-        if not evaluate: #teacher_forcing or use_oracle:
+        if not evaluate:  # teacher_forcing or use_oracle:
             decoder_max_len = target_length
 
         # Store state for encoder steps
@@ -220,7 +222,7 @@ class RNN(nn.Module):
             # In the paper it is clear that the hidden states are stored,
             # in particular the last layer.
             encoder_hiddens[idx] = enc_hidden[-1]
-  
+
         decoder_input = torch.tensor(
             self.decoder.dictionary[self.BOS], device=self.device()
         )
@@ -242,7 +244,6 @@ class RNN(nn.Module):
                 decoder_input = (
                     topi.squeeze().clone().detach()
                 )  # detach from history as input
-
 
             # Continue over EOS if not reached length of target
             # if not evaluate:
