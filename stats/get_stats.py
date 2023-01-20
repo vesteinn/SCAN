@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 
 import torch
 import sys
+import re
 
 
 def read_eval(lines):
@@ -20,6 +21,12 @@ def read_eval(lines):
     return data
 
 
+def fix_json(jstring):
+    data = eval(jstring)
+    jstring = json.dumps(data)
+    return jstring
+
+
 def read_log(path):
     with open(path) as infile:
         lines = infile.readlines()
@@ -31,9 +38,11 @@ def read_log(path):
         oracle_acc = None
         oracle_stats = None
         if "Oracle" in final_stats:
-            oracle_acc = float(sp_line[8])
-            oracle_stats = json.loads(lines[-3])
-        stats = json.loads(lines[-2])
+            oracle_stats = json.loads(fix_json(lines[-3]))
+        try:
+            stats = json.loads(lines[-2])
+        except:
+            breakpoint()
         preds = read_eval(lines)
     return {"acc": acc, "stats": stats, "oracle_acc": oracle_acc, "preds": preds, "oracle_stats": oracle_stats}
 
@@ -42,10 +51,10 @@ def load_folder(path):
     stats = []
     log_files = [path + "/" + fname for fname in os.listdir(path) if fname[-3:] == "txt"]
     for log in log_files:
-        try:
-            data = read_log(log)
-        except:
-            continue
+        #try:
+        data = read_log(log)
+        #except:
+        #    continue
         data["path"] = log
         stats.append(data)
     return stats
@@ -68,7 +77,11 @@ def acc(path, key="acc", pattern=""):
             stdev = accs[0]
         except:
             stdev = 0
-    stderr = stdev / math.sqrt(len(accs))
+    if stdev is None:
+        stdev = 0
+    if mean is None:
+        mean = 0
+    stderr = stdev / math.sqrt(max(1, len(accs)))
     return f"{mean:.1f} ± {stderr:.1f} %", mean, stderr
 
 
@@ -101,7 +114,6 @@ def action_command_stats(path):
     data = {"command_length": {}, "action_length": {}}
  
     for key in data:
-
         for length in stats[0]["stats"][key]:
             accs = [stat["stats"][key][length] for stat in stats]
             mean = statistics.mean(accs)
@@ -208,7 +220,7 @@ def get_neighbours(model_path, terms):
 
 def exp_3_complex_splits(path):
     stats = {}
-    for split in [1, 2, 4, 8, 16, 32, 64]:
+    for split in [1, 2, 4, 8, 16, 32]:
         stats[split] = acc(path, pattern=f"_p{split}_")
     return stats
 
@@ -232,6 +244,14 @@ def plot_exp_3_complex(data, out_file, show=False):
 
 if __name__ == "__main__":
     log_dir = "../logs_tf_first_half/" #logs_1984ade/"
+
+    log_dir = "../logs"
+
+    #
+    # Experiment 3 - jump complex
+    # 
+    exp_3_complex = exp_3_complex_splits(f"{log_dir}/experiment_3/jump_complex")
+    plot_exp_3_complex(exp_3_complex, "./exp_3_complex.png")
 
     #
     # Experiment 1
@@ -314,7 +334,8 @@ if __name__ == "__main__":
         print(f"({i}): Number incorrect containing 'turn left': {len(tl) - len(tlthrice) - len(tltwice)}")
 
     words = ["run", "jump", "run twice", "jump twice"]
-    neighbours = get_neighbours(f"{log_dir}/experiment_3/jump/model_0.pt", words)
+    #neighbours = get_neighbours(f"{log_dir}/experiment_3/turn_left/model_3.pt", words)
+    neighbours = get_neighbours(f"{log_dir}/experiment_3/jump/model_3.pt", words)
     for term in neighbours:
         res = neighbours[term]
         print(f"Neighb for {term}: {res}")
