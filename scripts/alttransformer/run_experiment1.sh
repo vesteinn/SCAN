@@ -8,9 +8,9 @@ valid_file=../../data/SCAN/simple_split/tasks_test_simple.txt
 #NUM_DECODER_LAYERS = sys.argv[4] #1
 
 dim=200
-layers=3
+layers=2
 bsz=1
-lr=0.001
+lr=0.0001
 
 for i in {0..4}; do
     log_dir=../logs_alttransformer/experiment_1/dim${dim}_layers${layers}_bsz${bsz}_lr${lr}
