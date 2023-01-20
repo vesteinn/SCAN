@@ -1,0 +1,6 @@
+Starting SCAN training
+Namespace(model='gru', train='../data/SCAN/length_split/tasks_train_length.txt', valid='../data/SCAN/length_split/tasks_test_length.txt', name=None, device='cuda', bsz=1, steps=100000, eval_interval=105000, lr=0.001, hidden_dim=50, layers=1, dropout=0.5, clip=5, use_attention=True, verbose=False, use_oracle=True, teacher_forcing_ratio=0.5, log_target_probs=True, seed=None, nheads=6)
+----------
+Loaded train dataset with 16990 entries
+Loaded validation dataset with 3920 entries
+Step 0 - training loss: 0.0021298241335898638
