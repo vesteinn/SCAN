@@ -20,6 +20,8 @@ from models import GRURNN
 from models import LSTMRNN
 from transformer_models import SCANTransformer
 
+import wandb
+
 
 MODEL_MAP = {"lstm": LSTMRNN, "gru": GRURNN, "transformer": SCANTransformer}
 
@@ -52,11 +54,12 @@ def eval(
     }
 
     accuracy = []
+    transition_accuracy = defaultdict(list)
     data_loader = DataLoader(dataset, batch_size=bsz)
     total_match = 0
     with torch.no_grad():
         for _, data in tqdm.tqdm(enumerate(data_loader), total=len(dataset)):
-            src, tgt = data
+            src, tgt, trans = data
             if (
                 len(src.shape) > 1
                 and len(tgt.shape) > 1
@@ -127,6 +130,9 @@ def eval(
             accuracy_stats["action_length"][len(tgt) - 1].append(correct_seq)
             accuracy_stats["command_length"][len(src) - 1].append(correct_seq)
 
+            for sing_trans in trans:
+                transition_accuracy[sing_trans[0]].append(correct_seq)
+
             if verbose:
                 print(
                     json.dumps(
@@ -158,6 +164,8 @@ def eval(
     accuracy_stats["command_length"] = acc_process(accuracy_stats["command_length"])
     accuracy_stats["action_length"] = acc_process(accuracy_stats["action_length"])
     accuracy_stats["accuracy"] = accuracy
+    accuracy_stats["transition_accuracy"] = transition_accuracy
+
     model.train()
     return accuracy, accuracy_stats
 
@@ -192,12 +200,18 @@ def train(
     bos = train_dataset.tgt_dict["BOS"]
     eos = train_dataset.tgt_dict["EOS"]
 
+    transition_stats = defaultdict(int)
+
     accuracy = 0
+
+    if args.wandb:
+        wandb.init(project=args.wandb_project, name=args.wandb_name)
+        wandb.config.update(args)
 
     for _epoch in range(1 + steps // len(data_loader)):
         for idx, data in tqdm.tqdm(enumerate(data_loader), total=len(data_loader)):
             optimizer.zero_grad()
-            src, tgt = data
+            src, tgt, trans = data
             if src.shape[0] == tgt.shape[0] == 1:
                 src = src.squeeze()
                 tgt = tgt.squeeze()
@@ -267,7 +281,19 @@ def train(
 
             loss_sum += loss
             if not step % log_interval:
-                print(f"Step {step} - training loss: {loss_sum / log_interval}")
+                training_loss = loss_sum / log_interval
+
+                if args.wandb:
+
+                    # log transition coverage
+                    if args.train_transitions:
+                        for sing_trans in trans:
+                            transition_stats[sing_trans[0]] += 1
+                        wandb.log(transition_stats)
+
+                    wandb.log({"training_loss": training_loss})
+
+                print(f"Step {step} - training loss: {training_loss}")
                 loss_sum = 0
 
             step += 1
@@ -280,9 +306,22 @@ def train(
                 eval_data, eval_stats = eval(
                     model, eval_dataset, verbose=verbose, use_oracle=use_oracle
                 )
+
+                transion_acc = {}
+                if "transition_accuracy" in eval_stats:
+                    for k, v in eval_stats["transition_accuracy"].items():
+                        transion_acc[f"eval_{k}"] = 100 * sum(v) / len(v)
+
                 eval_acc = 100 * sum(eval_data) / len(eval_data)
                 accs.append(eval_acc)
                 max_acc = max(accs)
+
+                if args.wandb:
+                    stats_for_wandb = {"eval_acc": eval_acc, "max_acc": max_acc}
+                    if args.train_transitions:
+                        stats_for_wandb.update(transion_acc)
+                    wandb.log(stats_for_wandb)
+
                 print(
                     f"Step {step} - Eval_acc: {eval_acc:.02f} % over {len(eval_data)} data points (max {max_acc})."
                 )
@@ -337,7 +376,14 @@ if __name__ == "__main__":
     parser.add_argument("--use_oracle", action="store_true", default=False)
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
     parser.add_argument("--log_target_probs", action="store_true", default=False)
-    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--wandb", action="store_true", default=False)
+    parser.add_argument("--wandb_project", type=str, default="SCAN")
+    parser.add_argument("--wandb_name", type=str, default="SCAN")
+    parser.add_argument("--log_interval", type=int, default=1000)
+    parser.add_argument("--train_transitions", type=str, default=None)
+    parser.add_argument("--valid_transitions", type=str, default=None)
+
 
     # Transformer specific
     parser.add_argument("--nheads", type=int, default=6)
@@ -354,17 +400,18 @@ if __name__ == "__main__":
     cur_path = os.path.dirname(os.path.realpath(__file__))
     data_path = f"{cur_path}/../../data/SCAN"
     tasks = f"{data_path}/tasks.txt"
-    src_dict, tgt_dict = generate_scan_dictionary(tasks, add_bos=True, add_eos=True)
+    #src_dict, tgt_dict = generate_scan_dictionary(tasks, add_bos=True, add_eos=True)
+    src_dict, tgt_dict = generate_scan_dictionary(args.train, add_bos=True, add_eos=True)
 
     pad = 0
     if args.model == "transformer":
         pad = 50
 
     train_dataset = SCANDataset(
-        args.train, src_dict, tgt_dict, device=args.device, pad=pad
+        args.train, src_dict, tgt_dict, device=args.device, pad=pad, transitions=args.train_transitions
     )
     valid_dataset = SCANDataset(
-        args.valid, src_dict, tgt_dict, device=args.device, pad=pad
+        args.valid, src_dict, tgt_dict, device=args.device, pad=pad, transitions=args.valid_transitions
     )
     print(f"Loaded train dataset with {len(train_dataset)} entries")
     print(f"Loaded validation dataset with {len(valid_dataset)} entries")
@@ -407,4 +454,5 @@ if __name__ == "__main__":
         log_target_probs=args.log_target_probs,
         verbose=args.verbose,
         args=args,
+        log_interval=args.log_interval
     )

@@ -46,9 +46,10 @@ def generate_scan_dictionary(full_dataset, add_bos=True, add_eos=True):
 
 
 class SCANDataset(torch.utils.data.Dataset):
-    def __init__(self, data, src_dict, tgt_dict, device, pad=0):
+    def __init__(self, data, src_dict, tgt_dict, device, pad=0, transitions=None):
         self.src_dict = src_dict
         self.tgt_dict = tgt_dict
+        self.transitions = transitions
         self.device = device
         self.commands = []
         self.actions = []
@@ -59,7 +60,9 @@ class SCANDataset(torch.utils.data.Dataset):
         return len(self.commands)
 
     def __getitem__(self, idx):
-        return (self.commands[idx], self.actions[idx])
+        if self.transitions:
+            return (self.commands[idx], self.actions[idx], self.transitions[idx])
+        return (self.commands[idx], self.actions[idx], [])
 
     def encode(self, text, dictionary, add_bos=False, add_eos=False):
         # TODO: read from variable
@@ -87,6 +90,17 @@ class SCANDataset(torch.utils.data.Dataset):
                 command, action = parse_action_command(line)
                 self.commands.append(self.encode_command(command))
                 self.actions.append(self.encode_action(action))
+        if self.transitions:
+            self.transitions = self.load_transitions(self.transitions)
+    
+    def load_transitions(self, transition_file):
+        transitions = []
+        with open(transition_file) as infile:
+            for line in infile:
+                # ['q0--jump-->q1', 'q1--around-->q2', 'q2--right-->q4']
+                trans = eval(line)
+                transitions.append(trans)
+        return transitions
 
 
 if __name__ == "__main__":
