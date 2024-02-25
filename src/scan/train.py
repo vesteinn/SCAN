@@ -41,6 +41,7 @@ def eval(
     log_target_probs=False,
     use_oracle=False,
     verbose=False,
+    max_eval=None,
 ):
     model.eval()
     src_dict = {v: k for k, v in dataset.src_dict.items()}
@@ -59,6 +60,7 @@ def eval(
     total_match = 0
     with torch.no_grad():
         for _, data in tqdm.tqdm(enumerate(data_loader), total=len(dataset)):
+
             src, tgt, trans = data
             if (
                 len(src.shape) > 1
@@ -154,10 +156,12 @@ def eval(
                 # total_match += match.size
                 # print(f"lcs: {match.size}")
             accuracy.append(correct_seq)
-            if _ == 3:
-                if verbose:
-                    avg_lcs = total_match / 3
-                    print(f"avg_lcs: {avg_lcs}")
+            #if _ == 3:
+            #    if verbose:
+            #        avg_lcs = total_match / 3
+            #        print(f"avg_lcs: {avg_lcs}")
+            #    break
+            if max_eval is not None and _ > max_eval:
                 break
 
     # assert len(accuracy) == len(dataset)
@@ -218,6 +222,11 @@ def train(
             if len(src.shape) == 0:
                 src = src.unsqueeze(dim=0)
                 tgt = tgt.unsqueeze(dim=0)
+
+            if args.train_transitions:
+                # make sure it's a set so we don't count the same transition multiple times
+                for sing_trans in set(trans):
+                    transition_stats[sing_trans[0]] += 1
 
             use_teacher_forcing = (
                 True if random.random() < teacher_forcing_ratio else False
@@ -284,13 +293,6 @@ def train(
                 training_loss = loss_sum / log_interval
 
                 if args.wandb:
-
-                    # log transition coverage
-                    if args.train_transitions:
-                        for sing_trans in trans:
-                            transition_stats[sing_trans[0]] += 1
-                        wandb.log(transition_stats)
-
                     wandb.log({"training_loss": training_loss})
 
                 print(f"Step {step} - training loss: {training_loss}")
@@ -304,22 +306,24 @@ def train(
             if not step % eval_interval:
                 print(f"Step {step} - running eval...")
                 eval_data, eval_stats = eval(
-                    model, eval_dataset, verbose=verbose, use_oracle=use_oracle
+                    model, eval_dataset, verbose=verbose, use_oracle=use_oracle, max_eval=args.max_eval
                 )
 
                 transion_acc = {}
                 if "transition_accuracy" in eval_stats:
                     for k, v in eval_stats["transition_accuracy"].items():
-                        transion_acc[f"eval_{k}"] = 100 * sum(v) / len(v)
+                        transion_acc[f"eval_{k}"] = sum(v) / len(v)
 
-                eval_acc = 100 * sum(eval_data) / len(eval_data)
+                eval_acc = sum(eval_data) / len(eval_data)
                 accs.append(eval_acc)
                 max_acc = max(accs)
 
                 if args.wandb:
                     stats_for_wandb = {"eval_acc": eval_acc, "max_acc": max_acc}
                     if args.train_transitions:
+                        # Keep this here since transitions are linked to eval accuracy
                         stats_for_wandb.update(transion_acc)
+                        stats_for_wandb.update(transition_stats)
                     wandb.log(stats_for_wandb)
 
                 print(
@@ -336,7 +340,7 @@ def train(
     eval_data, eval_stats = eval(
         model, eval_dataset, log_target_probs=log_target_probs, verbose=verbose
     )
-    eval_acc = 100 * sum(eval_data) / len(eval_data)
+    eval_acc = sum(eval_data) / len(eval_data)
     accs.append(eval_acc)
     max_acc = max(accs)
     try:
@@ -347,7 +351,7 @@ def train(
     oracle_string = ""
     if use_oracle:
         oracle_data, oracle_stats = eval(model, eval_dataset, use_oracle=use_oracle)
-        oracle_acc = 100 * sum(oracle_data) / len(oracle_data)
+        oracle_acc = sum(oracle_data) / len(oracle_data)
         oracle_string = f"(Oracle acc. {oracle_acc:.02f} %) "
         print(f"{oracle_stats}")
     print(f"{json_stats}")
@@ -383,7 +387,7 @@ if __name__ == "__main__":
     parser.add_argument("--log_interval", type=int, default=1000)
     parser.add_argument("--train_transitions", type=str, default=None)
     parser.add_argument("--valid_transitions", type=str, default=None)
-
+    parser.add_argument("--max_eval", type=int, default=None)
 
     # Transformer specific
     parser.add_argument("--nheads", type=int, default=6)
